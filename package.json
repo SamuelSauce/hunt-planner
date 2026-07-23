@@ -11,7 +11,7 @@
     "ingest:wyoming": "node scripts/ingest-wyoming.mjs",
     "ingest:boundaries": "node scripts/ingest-boundaries.mjs",
     "ingest:all": "npm run ingest:data && npm run ingest:colorado && npm run ingest:idaho && npm run ingest:wyoming && npm run ingest:boundaries",
-    "build": "tsc -b && vite build && node scripts/generate-static-content.mjs",
+    "build": "tsc -b && vite build && node scripts/generate-static-content.mjs && node scripts/prepare-sites-build.mjs",
     "content:build": "node scripts/generate-static-content.mjs",
     "content:validate": "node scripts/generate-static-content.mjs --validate-only",
     "content:map-card": "python3 scripts/generate-map-card.py",

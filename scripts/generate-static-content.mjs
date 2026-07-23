@@ -288,7 +288,7 @@ function metadata({
 }) {
   const url = absoluteUrl(pathname)
   const imageUrl = absoluteUrl(image)
-  const [imageWidth, imageHeight] = image === '/og.png' ? [1536, 1024] : [1200, 675]
+  const [imageWidth, imageHeight] = image === '/og.png' ? [1731, 909] : [1200, 675]
   const verification = GOOGLE_SITE_VERIFICATION
     ? `<meta name="google-site-verification" content="${escapeHtml(GOOGLE_SITE_VERIFICATION)}">`
     : ''
@@ -343,6 +343,7 @@ function header() {
         <div class="nav-links">
           <a href="/hunts/">Hunt library</a>
           <a href="/journal/">Journal</a>
+          <a href="/community">Community</a>
           <a href="/methodology/">Methodology</a>
           <a class="nav-cta" href="/">Open planner</a>
         </div>
@@ -1342,7 +1343,10 @@ function main() {
   }
   if (!fs.existsSync(DIST)) throw new Error('dist/ does not exist; run the Vite build first')
 
-  const paths = ['/', '/hunts/', '/journal/']
+  const spaShell = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8')
+  writePage('/community/', spaShell)
+
+  const paths = ['/', '/hunts/', '/journal/', '/community/']
   writePage('/journal/', journalIndex(articles))
   writePage('/hunts/', huntLibraryIndex(groups))
 
