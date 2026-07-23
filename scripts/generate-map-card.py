@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -251,14 +252,107 @@ def draw_boundary(
     base.alpha_composite(fill_layer)
 
 
-def ratio_text(hunt: dict[str, Any]) -> str:
-    totals = hunt.get("odds", {}).get("resident", {}).get("totals")
-    if totals and totals.get("successRatio"):
-        return str(totals["successRatio"])
-    profile = hunt.get("drawProfile", {}).get("resident")
-    if profile and isinstance(profile.get("odds"), (int, float)):
-        return f"{profile['odds']:.1f}%"
-    return "See profile"
+def clamp_percent(value: float) -> float:
+    return max(0.0, min(100.0, value))
+
+
+def point_row_chance(row: dict[str, Any]) -> float:
+    permits = row.get("totalPermits")
+    applicants = row.get("eligibleApplicants")
+    ratio = row.get("successRatioValue")
+    if not isinstance(permits, (int, float)) or permits <= 0:
+        return 0.0
+    if isinstance(ratio, (int, float)) and ratio > 0:
+        return clamp_percent(100 / ratio)
+    if not isinstance(applicants, (int, float)) or applicants <= 0:
+        return 0.0
+    return clamp_percent((permits / applicants) * 100)
+
+
+def estimate_point_sequence(chance_by_point: dict[int, float]) -> tuple[int, int] | None:
+    points = [point for point in chance_by_point if point >= 0]
+    if not points:
+        return None
+    remaining_chance = 1.0
+    for point in range(max(points) + 1):
+        annual_chance = chance_by_point.get(point, 0.0) / 100
+        remaining_chance *= 1 - annual_chance
+        if (1 - remaining_chance) * 100 >= 50:
+            return (point + 1, point)
+    return None
+
+
+def estimate_p50_draw(
+    hunt: dict[str, Any],
+    residency: str = "resident",
+) -> tuple[int, int | None] | None:
+    odds = hunt.get("odds") or {}
+    side = odds.get(residency) or {}
+    point_rows = side.get("byPoint") or []
+    if point_rows:
+        estimate = estimate_point_sequence(
+            {
+                int(row["points"]): point_row_chance(row)
+                for row in point_rows
+                if isinstance(row.get("points"), (int, float))
+            }
+        )
+        if estimate:
+            return estimate
+
+    profile = hunt.get("drawProfile") or {}
+    profile_side = profile.get(residency) or {}
+    if profile.get("system") == "preference-random":
+        tiers = profile_side.get("pointTiers") or []
+        regular = [
+            tier
+            for tier in tiers
+            if re.search(r"regular|preference draw", str(tier.get("pool", "")), re.I)
+        ]
+        candidates = regular or tiers
+        chance_by_point: dict[int, float] = {}
+        for tier in candidates:
+            label = str(tier.get("label", "")).strip()
+            if not re.fullmatch(r"\d+(?:\.\d+)?", label):
+                continue
+            point = math.floor(float(label))
+            odds_value = tier.get("odds")
+            chance = (
+                clamp_percent(float(odds_value))
+                if isinstance(odds_value, (int, float))
+                else 0.0
+            )
+            chance_by_point[point] = max(chance_by_point.get(point, 0.0), chance)
+        estimate = estimate_point_sequence(chance_by_point)
+        if estimate:
+            return estimate
+
+    annual_odds = profile_side.get("odds")
+    if not isinstance(annual_odds, (int, float)) or annual_odds <= 0:
+        return None
+    annual_chance = clamp_percent(float(annual_odds)) / 100
+    if annual_chance >= 1:
+        return (1, None)
+    years = math.ceil(math.log(0.5) / math.log(1 - annual_chance))
+    return (years, None)
+
+
+def draw_metric(hunt: dict[str, Any]) -> tuple[str, str]:
+    estimate = estimate_p50_draw(hunt)
+    if estimate:
+        years, point_level = estimate
+        year_label = "yr" if years == 1 else "yrs"
+        value = f"{years} {year_label}"
+        if point_level is not None:
+            value += f" / {point_level} pts"
+        return ("EST. RES. P50", value)
+
+    draw_out = hunt.get("drawOut") or {}
+    resident = draw_out.get("resident") or {}
+    if resident.get("drawnOutAt"):
+        return ("RESIDENT DRAW", str(resident["drawnOutAt"]))
+
+    return ("DRAW HISTORY", "Not available")
 
 
 def compact_number(value: Any) -> str:
@@ -300,7 +394,7 @@ def create_card(
     title_font = font(FONT_SERIF_BOLD, 56)
     body_font = font(FONT_REGULAR, 25)
     stat_label_font = font(FONT_BOLD, 15)
-    stat_value_font = font(FONT_BOLD, 29)
+    stat_value_font = font(FONT_BOLD, 26)
     small_font = font(FONT_REGULAR, 16)
 
     state_label = state.upper()
@@ -321,14 +415,15 @@ def create_card(
 
     harvest = hunt.get("harvest") or {}
     quota = hunt.get("quota") or {}
+    draw_label, draw_value = draw_metric(hunt)
     stats = [
-        ("2026 PERMITS", compact_number(quota.get("total"))),
+        (f"{hunt.get('planningYear', 'CURRENT')} PERMITS", compact_number(quota.get("total"))),
         (f"{harvest.get('year', 'LATEST')} SUCCESS", (
             f"{harvest['successRate']:.1f}%".replace(".0%", "%")
             if isinstance(harvest.get("successRate"), (int, float))
             else "—"
         )),
-        ("RESIDENT DRAW", ratio_text(hunt)),
+        (draw_label, draw_value),
     ]
     stat_y = 490
     stat_width = 175
