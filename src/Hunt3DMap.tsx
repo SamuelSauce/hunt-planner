@@ -40,6 +40,8 @@ type PotentialStatus = 'idle' | 'analyzing' | 'ready' | 'error'
 
 const LAND_STATUS_LAYER = 'land-status-layer'
 const SATELLITE_LAYER = 'satellite-layer'
+const SATELLITE_TRANSPORTATION_LAYER = 'satellite-transportation-layer'
+const SATELLITE_PLACES_LAYER = 'satellite-places-layer'
 const TOPOGRAPHIC_LAYER = 'topographic-layer'
 const TERRAIN_SOURCE = 'terrain-dem'
 const POTENTIAL_SOURCE = 'ai-potential-source'
@@ -83,9 +85,7 @@ export function Hunt3DMap({
   const [landStatusVisible, setLandStatusVisible] = useState(false)
   const [huntBoundaryVisible, setHuntBoundaryVisible] = useState(true)
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle')
-  const [layersExpanded, setLayersExpanded] = useState(
-    () => !window.matchMedia('(max-width: 760px)').matches,
-  )
+  const [layersExpanded, setLayersExpanded] = useState(true)
   const [potentialVisible, setPotentialVisible] = useState(false)
   const [potentialStatus, setPotentialStatus] = useState<PotentialStatus>('idle')
   const [potentialAnalysis, setPotentialAnalysis] = useState<HuntPotentialAnalysis | null>(null)
@@ -214,35 +214,44 @@ export function Hunt3DMap({
           type: 'geojson',
           data: boundaryFeatureCollection(boundaryFeatures),
         })
-        map.addLayer({
-          id: 'hunt-boundary-fill',
-          type: 'fill',
-          source: 'hunt-boundary',
-          paint: {
-            'fill-color': '#f26d3d',
-            'fill-opacity': 0.16,
+        map.addLayer(
+          {
+            id: 'hunt-boundary-fill',
+            type: 'fill',
+            source: 'hunt-boundary',
+            paint: {
+              'fill-color': '#f26d3d',
+              'fill-opacity': 0.16,
+            },
           },
-        })
-        map.addLayer({
-          id: 'hunt-boundary-glow',
-          type: 'line',
-          source: 'hunt-boundary',
-          paint: {
-            'line-color': 'rgba(255, 255, 255, 0.96)',
-            'line-width': 5,
-            'line-blur': 2,
+          SATELLITE_TRANSPORTATION_LAYER,
+        )
+        map.addLayer(
+          {
+            id: 'hunt-boundary-glow',
+            type: 'line',
+            source: 'hunt-boundary',
+            paint: {
+              'line-color': 'rgba(255, 255, 255, 0.96)',
+              'line-width': 5,
+              'line-blur': 2,
+            },
           },
-        })
-        map.addLayer({
-          id: 'hunt-boundary-line',
-          type: 'line',
-          source: 'hunt-boundary',
-          paint: {
-            'line-color': '#e95727',
-            'line-width': 3,
-            'line-dasharray': [2, 1],
+          SATELLITE_TRANSPORTATION_LAYER,
+        )
+        map.addLayer(
+          {
+            id: 'hunt-boundary-line',
+            type: 'line',
+            source: 'hunt-boundary',
+            paint: {
+              'line-color': '#e95727',
+              'line-width': 3,
+              'line-dasharray': [2, 1],
+            },
           },
-        })
+          SATELLITE_TRANSPORTATION_LAYER,
+        )
       }
       fitToHunt()
       setMapReady(true)
@@ -260,6 +269,8 @@ export function Hunt3DMap({
     const map = mapRef.current
     if (!map || !mapReady) return
     map.setLayoutProperty(SATELLITE_LAYER, 'visibility', basemap === 'satellite' ? 'visible' : 'none')
+    map.setLayoutProperty(SATELLITE_TRANSPORTATION_LAYER, 'visibility', basemap === 'satellite' ? 'visible' : 'none')
+    map.setLayoutProperty(SATELLITE_PLACES_LAYER, 'visibility', basemap === 'satellite' ? 'visible' : 'none')
     map.setLayoutProperty(TOPOGRAPHIC_LAYER, 'visibility', basemap === 'topographic' ? 'visible' : 'none')
   }, [basemap, mapReady])
 
@@ -700,6 +711,24 @@ function mapStyle(): StyleSpecification {
         maxzoom: 19,
         attribution: 'Topographic map © Esri and contributors',
       },
+      'satellite-transportation': {
+        type: 'raster',
+        tiles: [
+          'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+        ],
+        tileSize: 256,
+        maxzoom: 23,
+        attribution: 'Transportation © Esri, HERE, Garmin, and OpenStreetMap contributors',
+      },
+      'satellite-places': {
+        type: 'raster',
+        tiles: [
+          'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+        ],
+        tileSize: 256,
+        maxzoom: 23,
+        attribution: 'Places © Esri, HERE, Garmin, OpenStreetMap contributors, and the GIS community',
+      },
       [TERRAIN_SOURCE]: {
         type: 'raster-dem',
         url: 'https://tiles.mapterhorn.com/tilejson.json',
@@ -735,6 +764,23 @@ function mapStyle(): StyleSpecification {
         layout: { visibility: 'none' },
         paint: {
           'raster-opacity': 0.34,
+          'raster-fade-duration': 180,
+        },
+      },
+      {
+        id: SATELLITE_TRANSPORTATION_LAYER,
+        type: 'raster',
+        source: 'satellite-transportation',
+        paint: {
+          'raster-opacity': 0.82,
+          'raster-fade-duration': 180,
+        },
+      },
+      {
+        id: SATELLITE_PLACES_LAYER,
+        type: 'raster',
+        source: 'satellite-places',
+        paint: {
           'raster-fade-duration': 180,
         },
       },
