@@ -24,17 +24,58 @@ The app currently ingests data from:
 - Idaho Department of Fish and Game
 - Wyoming Game and Fish Department
 
-## Commands
+## Getting started
+
+The generated hunt data and map boundaries are committed to the repository, so
+you do not need to run the ingestion pipeline for normal development.
 
 ```bash
-npm install
+git clone https://github.com/SamuelSauce/hunt-planner.git
+cd hunt-planner
+npm ci
 npm run dev
+```
+
+Other common commands:
+
+```bash
 npm run build
 npm run lint
+```
+
+## Refreshing source data
+
+The Utah and Colorado PDF importers require `pdftotext`, which is provided by
+Poppler:
+
+```bash
+# macOS
+brew install poppler
+
+# Ubuntu or Debian
+sudo apt install poppler-utils
+```
+
+Run every importer with:
+
+```bash
 npm run ingest:all
 ```
 
 Individual state and boundary importers are also available in `package.json`.
+Downloaded PDFs and web pages are cached in the ignored `work/` directory at
+the repository root. A fresh clone creates and populates this directory
+automatically as the importers run.
+
+To share a cache between checkouts or Git worktrees, set
+`HUNT_PLANNER_WORK_DIR` to an absolute path:
+
+```bash
+HUNT_PLANNER_WORK_DIR="$HOME/.cache/hunt-planner" npm run ingest:all
+```
+
+Without that environment variable, each checkout keeps an independent cache in
+its own `work/` directory.
 
 ## Deployment
 

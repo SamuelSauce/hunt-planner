@@ -2,10 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveWorkDir } from './work-dir.mjs'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const workspaceDir = path.resolve(rootDir, '..')
-const sourcePdfDir = path.join(workspaceDir, 'work', 'source-pdfs')
+const sourcePdfDir = path.join(resolveWorkDir(rootDir), 'source-pdfs')
 const dataDir = path.join(rootDir, 'src', 'data')
 
 const WILDLIFE_BASE = 'https://wildlife.utah.gov'

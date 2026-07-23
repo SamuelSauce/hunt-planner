@@ -1,11 +1,11 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveWorkDir } from './work-dir.mjs'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const workspaceDir = path.resolve(rootDir, '..')
 const dataDir = path.join(rootDir, 'src', 'data')
-const cacheDir = path.join(workspaceDir, 'work', 'wyoming-pages')
+const cacheDir = path.join(resolveWorkDir(rootDir), 'wyoming-pages')
 
 const WGFD = 'https://wgfd.wyo.gov'
 const DRAW_REPORTS = `${WGFD}/licenses-applications/draw-results-odds`
