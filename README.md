@@ -41,7 +41,24 @@ Other common commands:
 ```bash
 npm run build
 npm run lint
+npm run content:validate
 ```
+
+## Editorial publishing
+
+The static content build turns the structured hunt datasets and Markdown files
+in `content/journal/` into crawlable hunt pages, journal articles, disclosure
+pages, an XML sitemap, and an RSS feed. It runs automatically after the Vite
+build.
+
+Each journal article must include a complete metadata block, an original image,
+current official sources, clearly labeled anecdotal field reports, and a link
+to a matching Hunt Planner record. Run the content validator before previewing
+or publishing.
+
+Set `SITE_URL` when building for a different canonical host. The Search Console
+verification token is persisted in the application home page and static
+generator. `GOOGLE_SITE_VERIFICATION` can override it for another deployment.
 
 ## Refreshing source data
 

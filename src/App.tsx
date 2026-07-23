@@ -603,6 +603,14 @@ function App() {
             {activeMeta.secondarySourceLabel}
             <ExternalLink size={15} aria-hidden="true" />
           </a>
+          <a href="/hunts/">
+            Hunt library
+            <Target size={15} aria-hidden="true" />
+          </a>
+          <a href="/journal/">
+            Journal
+            <FileText size={15} aria-hidden="true" />
+          </a>
           {view === 'contact' ? (
             <a href={plannerHref} onClick={(event) => navigateWithinApp(event, 'planner', plannerHref)}>
               Planner
