@@ -9,6 +9,7 @@ import {
   Mountain,
   RotateCcw,
   Satellite,
+  Share2,
   Sparkles,
   X,
 } from 'lucide-react'
@@ -56,6 +57,8 @@ const stateCamera: Record<PlannerState, { center: [number, number]; zoom: number
 
 export function Hunt3DMap({
   hunt,
+  shareStatus,
+  onShare,
   onClose,
 }: {
   hunt: MapHunt & {
@@ -63,6 +66,8 @@ export function Hunt3DMap({
     weapon: string
     seasonDateText: string | null
   }
+  shareStatus: 'idle' | 'shared' | 'copied' | 'error'
+  onShare: () => void
   onClose: () => void
 }) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
@@ -387,15 +392,33 @@ export function Hunt3DMap({
             <p>{hunt.huntNumber} · {hunt.species} · {hunt.weapon || 'Weapon varies'}</p>
           </div>
         </div>
-        <button
-          ref={closeButtonRef}
-          className="hunt-3d-close"
-          type="button"
-          onClick={onClose}
-          aria-label="Close 3D map"
-        >
-          <X size={21} aria-hidden="true" />
-        </button>
+        <div className="hunt-3d-header-actions">
+          <button
+            className={`hunt-3d-share ${shareStatus === 'copied' || shareStatus === 'shared' ? 'copied' : ''}`}
+            type="button"
+            onClick={onShare}
+          >
+            <Share2 size={18} aria-hidden="true" />
+            <span>
+              {shareStatus === 'shared'
+                ? 'Shared'
+                : shareStatus === 'copied'
+                  ? 'Link copied'
+                  : shareStatus === 'error'
+                    ? 'Copy failed'
+                    : 'Share 3D map'}
+            </span>
+          </button>
+          <button
+            ref={closeButtonRef}
+            className="hunt-3d-close"
+            type="button"
+            onClick={onClose}
+            aria-label="Close 3D map"
+          >
+            <X size={21} aria-hidden="true" />
+          </button>
+        </div>
       </header>
 
       <aside

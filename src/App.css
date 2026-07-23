@@ -1431,13 +1431,17 @@ textarea {
   white-space: nowrap;
 }
 
-.hunt-3d-close {
-  display: grid;
-  width: 42px;
-  height: 42px;
+.hunt-3d-header-actions {
+  display: flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
   pointer-events: auto;
-  place-items: center;
+}
+
+.hunt-3d-share,
+.hunt-3d-close {
+  min-height: 42px;
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -1445,6 +1449,31 @@ textarea {
   cursor: pointer;
 }
 
+.hunt-3d-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.hunt-3d-share.copied {
+  color: #e4ffeb;
+  background: rgba(42, 117, 65, 0.54);
+  border-color: rgba(154, 224, 175, 0.42);
+}
+
+.hunt-3d-close {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.hunt-3d-share:hover,
 .hunt-3d-close:hover {
   background: rgba(255, 255, 255, 0.18);
 }
@@ -2228,6 +2257,21 @@ textarea {
 
   .hunt-3d-mark {
     display: none;
+  }
+
+  .hunt-3d-share {
+    width: 42px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .hunt-3d-share span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .hunt-3d-panel-heading small,

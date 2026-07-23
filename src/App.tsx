@@ -313,7 +313,10 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(initialShare.hunt?.id ?? null)
   const [reportQuery, setReportQuery] = useState('')
   const [shareStatus, setShareStatus] = useState<ShareStatus>('idle')
-  const [map3dHunt, setMap3dHunt] = useState<Hunt | null>(null)
+  const [map3dHunt, setMap3dHunt] = useState<Hunt | null>(
+    view === 'planner' && initialShare.open3D ? initialShare.hunt : null,
+  )
+  const [mapShareStatus, setMapShareStatus] = useState<ShareStatus>('idle')
   const [cardShareStatus, setCardShareStatus] = useState<{
     huntId: string
     status: Exclude<ShareStatus, 'idle' | 'error'>
@@ -326,7 +329,19 @@ function App() {
 
   useEffect(() => {
     initAnalytics()
-    const handlePopState = () => setView(getInitialView())
+    const handlePopState = () => {
+      const nextShare = getInitialShareState()
+      const nextView = getInitialView()
+      setView(nextView)
+      setPlannerState(nextShare.state)
+      setSpecies(nextShare.species)
+      setCategory(nextShare.category)
+      setResidency(nextShare.residency)
+      setWeapon(nextShare.weapon)
+      setSelectedId(nextShare.hunt?.id ?? null)
+      setMap3dHunt(nextView === 'planner' && nextShare.open3D ? nextShare.hunt : null)
+      setMapShareStatus('idle')
+    }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
@@ -394,13 +409,18 @@ function App() {
   useEffect(() => {
     if (view !== 'planner') return
     if (!selectedHunt) return
-    replaceShareUrl(selectedHunt, residency, { species, category, weapon })
+    replaceShareUrl(
+      selectedHunt,
+      residency,
+      { species, category, weapon },
+      map3dHunt?.id === selectedHunt.id,
+    )
     const path = `${window.location.pathname}${window.location.search}`
     if (lastTrackedPage.current !== path) {
       lastTrackedPage.current = path
       trackPageView(path)
     }
-  }, [category, plannerState, residency, selectedHunt, species, view, weapon])
+  }, [category, map3dHunt, plannerState, residency, selectedHunt, species, view, weapon])
 
   useEffect(() => {
     if (view !== 'contact') return
@@ -512,7 +532,42 @@ function App() {
       species: hunt.species,
       source,
     })
+    const nextUrl = selectedHuntUrl(hunt, residency, { species, category, weapon }, true)
+    if (nextUrl !== window.location.href) {
+      window.history.pushState({ huntPlannerView: '3d' }, '', nextUrl)
+    }
+    setSelectedId(hunt.id)
+    setMapShareStatus('idle')
     setMap3dHunt(hunt)
+  }
+  const closeHunt3DMap = () => {
+    if (window.history.state?.huntPlannerView === '3d') {
+      window.history.back()
+      return
+    }
+    setMapShareStatus('idle')
+    setMap3dHunt(null)
+  }
+  const shareHunt3DMap = (hunt: Hunt) => {
+    shareHunt3DMapLink(hunt, residency, { species, category, weapon })
+      .then((result) => {
+        if (result === 'dismissed') {
+          setMapShareStatus('idle')
+          return
+        }
+        trackEvent('share_hunt_3d_map', {
+          result,
+          hunt_number: hunt.huntNumber,
+          species: hunt.species,
+          residency,
+        })
+        setMapShareStatus(result)
+        window.setTimeout(() => setMapShareStatus('idle'), 1600)
+      })
+      .catch(() => {
+        setMapShareStatus('error')
+        window.setTimeout(() => setMapShareStatus('idle'), 2200)
+      })
   }
 
   return (
@@ -799,7 +854,12 @@ function App() {
             </div>
           )}
         >
-          <Hunt3DMap hunt={map3dHunt} onClose={() => setMap3dHunt(null)} />
+          <Hunt3DMap
+            hunt={map3dHunt}
+            shareStatus={mapShareStatus}
+            onShare={() => shareHunt3DMap(map3dHunt)}
+            onClose={closeHunt3DMap}
+          />
         </Suspense>
       )}
     </div>
@@ -1926,6 +1986,7 @@ function getInitialShareState() {
     species: string
     category: Category
     weapon: string
+    open3D: boolean
   } = {
     hunt: null,
     residency: 'resident',
@@ -1933,6 +1994,7 @@ function getInitialShareState() {
     species: 'Deer',
     category: 'general-otc',
     weapon: 'Any Legal Weapon (Late)',
+    open3D: false,
   }
   if (typeof window === 'undefined') return fallback
 
@@ -2024,8 +2086,9 @@ function getInitialShareState() {
   const weapon = weaponParam && weaponMatchesState && weaponMatchesHunt
     ? weaponParam
     : defaultWeapon
+  const open3D = params.get('view') === '3d' && hunt !== null
 
-  return { hunt, residency, state: resolvedState, species, category, weapon }
+  return { hunt, residency, state: resolvedState, species, category, weapon, open3D }
 }
 
 function normalizePlannerState(value: unknown): PlannerState | null {
@@ -2044,11 +2107,13 @@ function selectedHuntUrl(
   hunt: Hunt,
   residency: Residency,
   filters?: PlannerFilters,
+  open3D = false,
 ) {
   const url = appUrl('/')
   url.searchParams.set('state', stateCode(normalizePlannerState(hunt.state) ?? 'utah'))
   url.searchParams.set('hunt', hunt.huntNumber)
   url.searchParams.set('residency', residency)
+  if (open3D) url.searchParams.set('view', '3d')
   if (filters) {
     url.searchParams.set('species', filters.species)
     url.searchParams.set('huntType', filters.category)
@@ -2122,9 +2187,10 @@ function replaceShareUrl(
   hunt: Hunt,
   residency: Residency,
   filters: PlannerFilters,
+  open3D = false,
 ) {
   if (typeof window === 'undefined') return
-  const nextUrl = selectedHuntUrl(hunt, residency, filters)
+  const nextUrl = selectedHuntUrl(hunt, residency, filters, open3D)
   if (nextUrl !== window.location.href) {
     window.history.replaceState(null, '', nextUrl)
   }
@@ -2140,6 +2206,36 @@ async function shareHuntLink(
   const shareData = {
     title: `${stateLabel} Hunt Planner: ${hunt.huntName}`,
     text: `${hunt.huntNumber} - ${hunt.weapon || 'hunt'} for ${residencyLabel(residency).toLowerCase()} draw and harvest details.`,
+    url: shareUrl,
+  }
+
+  if (
+    typeof navigator !== 'undefined' &&
+    navigator.share &&
+    (!navigator.canShare || navigator.canShare(shareData))
+  ) {
+    try {
+      await navigator.share(shareData)
+      return 'shared'
+    } catch (error) {
+      if (isShareDismissal(error)) return 'dismissed'
+    }
+  }
+
+  await copyTextToClipboard(shareUrl)
+  return 'copied'
+}
+
+async function shareHunt3DMapLink(
+  hunt: Hunt,
+  residency: Residency,
+  filters: PlannerFilters,
+): Promise<ShareResult> {
+  const shareUrl = selectedHuntUrl(hunt, residency, filters, true)
+  const stateLabel = stateMeta[normalizePlannerState(hunt.state) ?? 'utah'].name
+  const shareData = {
+    title: `${stateLabel} 3D hunt map: ${hunt.huntName}`,
+    text: `Explore the 3D map for ${hunt.huntNumber} - ${hunt.huntName}.`,
     url: shareUrl,
   }
 
