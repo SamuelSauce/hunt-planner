@@ -574,7 +574,8 @@ textarea {
 .hunt-3d-link,
 .detail-map-link,
 .detail-share-link,
-.detail-3d-link {
+.detail-3d-link,
+.detail-discuss-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -611,7 +612,8 @@ textarea {
 
 .detail-map-link,
 .detail-share-link,
-.detail-3d-link {
+.detail-3d-link,
+.detail-discuss-link {
   min-height: 34px;
   padding: 0 11px;
   font-size: 0.82rem;
@@ -620,7 +622,8 @@ textarea {
 .hunt-share-link,
 .hunt-3d-link,
 .detail-share-link,
-.detail-3d-link {
+.detail-3d-link,
+.detail-discuss-link {
   cursor: pointer;
   font: inherit;
 }

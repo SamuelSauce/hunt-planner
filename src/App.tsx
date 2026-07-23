@@ -20,6 +20,7 @@ import coloradoPlannerData from './data/cpw-data.json'
 import idahoPlannerData from './data/idfg-data.json'
 import wyomingPlannerData from './data/wgfd-data.json'
 import { initAnalytics, trackEvent, trackPageView } from './analytics'
+import { CommunityBoard } from './community/CommunityBoard'
 import { estimateP50Draw, opportunityScore, type DrawTimeEstimate } from './drawMetrics'
 import { MapExplorer } from './MapExplorer'
 import './App.css'
@@ -42,7 +43,7 @@ type Category =
 type SortMode = 'draw' | 'opportunity' | 'success' | 'season' | 'quota'
 type ShareResult = 'shared' | 'copied' | 'dismissed'
 type ShareStatus = 'idle' | 'shared' | 'copied' | 'error'
-type AppView = 'planner' | 'contact'
+type AppView = 'planner' | 'community' | 'contact'
 type ContactReason = 'data-issue' | 'question' | 'feedback'
 
 type PlannerFilters = {
@@ -423,7 +424,7 @@ function App() {
   }, [category, map3dHunt, plannerState, residency, selectedHunt, species, view, weapon])
 
   useEffect(() => {
-    if (view !== 'contact') return
+    if (view === 'planner') return
     const path = `${window.location.pathname}${window.location.search}`
     if (lastTrackedPage.current !== path) {
       lastTrackedPage.current = path
@@ -483,6 +484,7 @@ function App() {
   const plannerHref = selectedId && selectedHunt
     ? selectedHuntUrl(selectedHunt, residency, { species, category, weapon })
     : '/'
+  const communityHref = communityPageUrl()
   const contactHref = contactPageUrl()
   const navigateWithinApp = (event: React.MouseEvent<HTMLAnchorElement>, nextView: AppView, href: string) => {
     event.preventDefault()
@@ -578,31 +580,37 @@ function App() {
             <MapPinned size={26} aria-hidden="true" />
           </div>
           <div>
-            <p className="eyebrow">{activeMeta.eyebrow}</p>
-            <h1>{activeMeta.title}</h1>
+            <p className="eyebrow">
+              {view === 'community' ? 'Western hunt research' : activeMeta.eyebrow}
+            </p>
+            <h1>{view === 'community' ? 'Hunt Planner' : activeMeta.title}</h1>
           </div>
         </div>
         <div className="header-actions">
-          <div className="state-switcher" aria-label="Planner state">
-            {stateOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={option.value === plannerState ? 'active' : ''}
-                onClick={() => changePlannerState(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          <a href={activeMeta.primarySourceUrl} target="_blank" rel="noreferrer">
-            {activeMeta.primarySourceLabel}
-            <ExternalLink size={15} aria-hidden="true" />
-          </a>
-          <a href={activeMeta.secondarySourceUrl} target="_blank" rel="noreferrer">
-            {activeMeta.secondarySourceLabel}
-            <ExternalLink size={15} aria-hidden="true" />
-          </a>
+          {view === 'planner' && (
+            <>
+              <div className="state-switcher" aria-label="Planner state">
+                {stateOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={option.value === plannerState ? 'active' : ''}
+                    onClick={() => changePlannerState(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <a href={activeMeta.primarySourceUrl} target="_blank" rel="noreferrer">
+                {activeMeta.primarySourceLabel}
+                <ExternalLink size={15} aria-hidden="true" />
+              </a>
+              <a href={activeMeta.secondarySourceUrl} target="_blank" rel="noreferrer">
+                {activeMeta.secondarySourceLabel}
+                <ExternalLink size={15} aria-hidden="true" />
+              </a>
+            </>
+          )}
           <a href="/hunts/">
             Hunt library
             <Target size={15} aria-hidden="true" />
@@ -611,12 +619,22 @@ function App() {
             Journal
             <FileText size={15} aria-hidden="true" />
           </a>
-          {view === 'contact' ? (
+          {view !== 'planner' && (
             <a href={plannerHref} onClick={(event) => navigateWithinApp(event, 'planner', plannerHref)}>
               Planner
               <MapPinned size={15} aria-hidden="true" />
             </a>
-          ) : (
+          )}
+          {view !== 'community' && (
+            <a
+              href={communityHref}
+              onClick={(event) => navigateWithinApp(event, 'community', communityHref)}
+            >
+              Community
+              <MessageSquare size={15} aria-hidden="true" />
+            </a>
+          )}
+          {view !== 'contact' && (
             <a href={contactHref} onClick={(event) => navigateWithinApp(event, 'contact', contactHref)}>
               Contact
               <Mail size={15} aria-hidden="true" />
@@ -633,6 +651,8 @@ function App() {
           plannerHref={plannerHref}
           onPlannerClick={(event) => navigateWithinApp(event, 'planner', plannerHref)}
         />
+      ) : view === 'community' ? (
+        <CommunityBoard />
       ) : (
       <main id="planner" className="planner-grid">
         <MapExplorer
@@ -844,6 +864,12 @@ function App() {
                   })
               }}
               onOpen3D={() => openHunt3DMap(selectedHunt, 'detail')}
+              onDiscuss={() => {
+                const href = communityPageUrl(selectedHunt, true)
+                window.history.pushState(null, '', href)
+                setView('community')
+                window.scrollTo({ top: 0, behavior: 'auto' })
+              }}
             />
           ) : (
             <div className="empty-state">No hunts match the current filters.</div>
@@ -1137,12 +1163,14 @@ function HuntDetail({
   shareStatus,
   onShareLink,
   onOpen3D,
+  onDiscuss,
 }: {
   hunt: Hunt
   residency: Residency
   shareStatus: ShareStatus
   onShareLink: () => void
   onOpen3D: () => void
+  onDiscuss: () => void
 }) {
   const oddsSide = hunt.odds?.[residency] ?? null
   const drawProfileSide = hunt.drawProfile?.[residency] ?? null
@@ -1198,6 +1226,10 @@ function HuntDetail({
           <button className="detail-3d-link" type="button" onClick={onOpen3D}>
             <Mountain size={15} aria-hidden="true" />
             Open 3D map
+          </button>
+          <button className="detail-discuss-link" type="button" onClick={onDiscuss}>
+            <MessageSquare size={15} aria-hidden="true" />
+            Discuss this hunt
           </button>
         </div>
       </div>
@@ -1983,6 +2015,7 @@ function quotaText(hunt: Hunt) {
 function getInitialView(): AppView {
   if (typeof window === 'undefined') return 'planner'
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/'
+  if (pathname === '/community' || pathname.startsWith('/community/')) return 'community'
   return pathname === '/contact' ? 'contact' : 'planner'
 }
 
@@ -2138,6 +2171,17 @@ function contactPageUrl(hunt?: Hunt | null, residency?: Residency) {
     url.searchParams.set('hunt', hunt.huntNumber)
     url.searchParams.set('residency', residency)
   }
+  return url.toString()
+}
+
+function communityPageUrl(hunt?: Hunt | null, compose = false) {
+  const url = appUrl('/community')
+  if (hunt) {
+    url.searchParams.set('state', stateCode(normalizePlannerState(hunt.state) ?? 'utah').toUpperCase())
+    url.searchParams.set('species', hunt.species)
+    url.searchParams.set('hunt', hunt.huntNumber)
+  }
+  if (compose) url.searchParams.set('compose', '1')
   return url.toString()
 }
 

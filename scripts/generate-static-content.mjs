@@ -12,6 +12,8 @@ const GOOGLE_SITE_VERIFICATION =
 const ANALYTICS_ID = 'G-NC83FX30D5'
 const VALIDATE_ONLY = process.argv.includes('--validate-only')
 const CONTACT_EMAIL = 'samuelfbridge@gmail.com'
+const MIN_STABLE_ODDS_APPLICANTS = 10
+const PROBABLE_CHANCE = 25
 
 const stateConfigs = [
   { key: 'utah', label: 'Utah', code: 'UT', file: 'udwr-data.json' },
@@ -286,7 +288,7 @@ function metadata({
 }) {
   const url = absoluteUrl(pathname)
   const imageUrl = absoluteUrl(image)
-  const [imageWidth, imageHeight] = image === '/og.png' ? [1536, 1024] : [1200, 675]
+  const [imageWidth, imageHeight] = image === '/og.png' ? [1731, 909] : [1200, 675]
   const verification = GOOGLE_SITE_VERIFICATION
     ? `<meta name="google-site-verification" content="${escapeHtml(GOOGLE_SITE_VERIFICATION)}">`
     : ''
@@ -341,6 +343,7 @@ function header() {
         <div class="nav-links">
           <a href="/hunts/">Hunt library</a>
           <a href="/journal/">Journal</a>
+          <a href="/community">Community</a>
           <a href="/methodology/">Methodology</a>
           <a class="nav-cta" href="/">Open planner</a>
         </div>
@@ -415,22 +418,470 @@ function primaryHunt(group) {
   )
 }
 
+function drawHunt(group) {
+  return (
+    group.hunts.find((hunt) => hunt.odds || hunt.drawOut || hunt.drawProfile) ||
+    primaryHunt(group)
+  )
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, value))
+}
+
+function pointRowChance(row) {
+  if (row.totalPermits <= 0) return 0
+  if (row.successRatioValue && row.successRatioValue > 0) {
+    return clampPercent(100 / row.successRatioValue)
+  }
+  if (row.eligibleApplicants <= 0) return 0
+  return clampPercent((row.totalPermits / row.eligibleApplicants) * 100)
+}
+
+function estimatePointSequence(chanceByPoint) {
+  const points = [...chanceByPoint.keys()].filter(
+    (point) => Number.isFinite(point) && point >= 0,
+  )
+  if (points.length === 0) return null
+
+  const maxPoint = Math.max(...points)
+  let remainingChance = 1
+  for (let point = 0; point <= maxPoint; point += 1) {
+    const annualChance = (chanceByPoint.get(point) ?? 0) / 100
+    remainingChance *= 1 - annualChance
+    const cumulativeChance = (1 - remainingChance) * 100
+    if (cumulativeChance >= 50) {
+      return {
+        years: point + 1,
+        pointLevel: point,
+        cumulativeChance,
+      }
+    }
+  }
+  return null
+}
+
+function estimatePointOdds(side) {
+  if (!side || side.byPoint.length === 0) return null
+  return estimatePointSequence(
+    new Map(side.byPoint.map((row) => [row.points, pointRowChance(row)])),
+  )
+}
+
+function usefulDrawTiers(side) {
+  if (!side) return []
+  const regularTiers = side.pointTiers.filter((tier) =>
+    /regular|preference draw/i.test(tier.pool ?? ''),
+  )
+  const candidates = regularTiers.length > 0 ? regularTiers : side.pointTiers
+  return candidates
+    .filter((tier) => /^\d+(?:\.\d+)?$/.test(tier.label.trim()))
+    .sort((a, b) => Number(a.label) - Number(b.label))
+}
+
+function estimateProfileTiers(side) {
+  const tiers = usefulDrawTiers(side)
+  if (tiers.length === 0) return null
+  const chanceByPoint = new Map()
+  tiers.forEach((tier) => {
+    const point = Math.floor(Number(tier.label))
+    const chance = clampPercent(tier.odds ?? 0)
+    chanceByPoint.set(point, Math.max(chanceByPoint.get(point) ?? 0, chance))
+  })
+  return estimatePointSequence(chanceByPoint)
+}
+
+function estimateRepeatedOdds(odds) {
+  if (!Number.isFinite(odds) || odds <= 0) return null
+  const annualChance = clampPercent(odds) / 100
+  if (annualChance >= 1) {
+    return { years: 1, pointLevel: null, cumulativeChance: 100 }
+  }
+  const years = Math.ceil(Math.log(0.5) / Math.log(1 - annualChance))
+  return {
+    years,
+    pointLevel: null,
+    cumulativeChance: (1 - Math.pow(1 - annualChance, years)) * 100,
+  }
+}
+
+function estimateP50Draw(hunt, residency) {
+  const pointEstimate = estimatePointOdds(hunt.odds?.[residency] ?? null)
+  if (pointEstimate) return pointEstimate
+
+  const profile = hunt.drawProfile
+  const side = profile?.[residency] ?? null
+  if (!profile || !side) return null
+  if (profile.system === 'preference-random') {
+    const tierEstimate = estimateProfileTiers(side)
+    if (tierEstimate) return tierEstimate
+  }
+  return estimateRepeatedOdds(side.odds)
+}
+
+function p50DrawText(estimate) {
+  const years = `${estimate.years} ${estimate.years === 1 ? 'yr' : 'yrs'}`
+  return estimate.pointLevel === null ? years : `${years} / ${estimate.pointLevel} pts`
+}
+
+function oddsChance(row) {
+  if (!row.successRatioValue || row.totalPermits === 0) return null
+  return Math.min(100, 100 / row.successRatioValue)
+}
+
+function allOddsTiers(side) {
+  return side.byPoint
+    .map((row) => {
+      const chance = oddsChance(row)
+      return chance === null ? null : { ...row, chance }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.points - b.points)
+}
+
+function stableOddsTiers(side) {
+  return allOddsTiers(side).filter(
+    (tier) => tier.eligibleApplicants >= MIN_STABLE_ODDS_APPLICANTS,
+  )
+}
+
+function probableOddsTiers(side) {
+  return stableOddsTiers(side).filter((tier) => tier.chance >= PROBABLE_CHANCE)
+}
+
+function firstCertainTier(side) {
+  return allOddsTiers(side).find((tier) => tier.chance >= 99.5) ?? null
+}
+
+function bestStableOddsTier(side) {
+  return stableOddsTiers(side).sort((a, b) => b.chance - a.chance)[0] ?? null
+}
+
+function probableSummaryText(side) {
+  const probable = probableOddsTiers(side)
+  const certain = firstCertainTier(side)
+  if (probable.length > 0) {
+    const first = probable[0]
+    if (certain && certain.points !== first.points) {
+      return `${PROBABLE_CHANCE}%+ at ${first.points} pts; 100% at ${certain.points} pts`
+    }
+    if (certain) return `${PROBABLE_CHANCE}%+ and 100% at ${first.points} pts`
+    return `${PROBABLE_CHANCE}%+ at ${first.points} pts`
+  }
+  if (certain) return `100% reported at ${certain.points} pts`
+  const stableBest = bestStableOddsTier(side)
+  if (stableBest) {
+    return `Best row: ${formatPercent(stableBest.chance)} at ${stableBest.points} pts`
+  }
+  return allOddsTiers(side).length > 0
+    ? `No reliable ${PROBABLE_CHANCE}%+ tier`
+    : 'No issued permits'
+}
+
+function firstProbablePointText(side) {
+  const first = probableOddsTiers(side)[0]
+  if (!first) {
+    return allOddsTiers(side).length > 0
+      ? `No reliable ${PROBABLE_CHANCE}%+ tier`
+      : `No ${PROBABLE_CHANCE}%+ tier`
+  }
+  return `${first.points} points (${formatPercent(first.chance)})`
+}
+
+function pointSummaryText(side) {
+  const certain = firstCertainTier(side)
+  if (certain) return `${certain.points} pts`
+  const best = bestStableOddsTier(side)
+  if (best) return `Best: ${formatPercent(best.chance)} at ${best.points} pts`
+  return allOddsTiers(side).length > 0 ? 'No reliable 100% tier' : 'N/A'
+}
+
+function chartLabelTiers(tiers) {
+  if (tiers.length <= 7) return tiers
+  const labeledPoints = new Set([tiers[0].points, tiers[tiers.length - 1].points])
+  for (const target of [PROBABLE_CHANCE, 50, 75, 100]) {
+    const tier = tiers.find((candidate) => candidate.chance >= target)
+    if (tier) labeledPoints.add(tier.points)
+  }
+  return tiers.filter((tier) => labeledPoints.has(tier.points))
+}
+
+function oddsChart(side, label) {
+  const tiers = allOddsTiers(side)
+  if (tiers.length === 0) {
+    return '<p class="draw-empty">No permits were issued in the parsed point rows.</p>'
+  }
+
+  const width = 720
+  const height = 210
+  const margin = { top: 24, right: 24, bottom: 30, left: 48 }
+  const maxPoints = Math.max(1, ...tiers.map((tier) => tier.points))
+  const innerWidth = width - margin.left - margin.right
+  const innerHeight = height - margin.top - margin.bottom
+  const xFor = (points) => margin.left + (points / maxPoints) * innerWidth
+  const yFor = (chance) => margin.top + ((100 - chance) / 100) * innerHeight
+  const points = tiers.map((tier) => `${xFor(tier.points)},${yFor(tier.chance)}`).join(' ')
+  const labels = chartLabelTiers(tiers)
+  const chartId = `draw-chart-${slugify(label)}`
+
+  return `
+    <div class="static-chart-scroll" tabindex="0" aria-label="Scrollable point-level draw odds chart">
+      <svg class="static-odds-chart" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="${chartId}-title ${chartId}-desc">
+        <title id="${chartId}-title">${escapeHtml(label)} point-level draw odds</title>
+        <desc id="${chartId}-desc">Historical first-choice odds by preference or bonus point tier.</desc>
+        ${[0, 50, 100]
+          .map((tick) => {
+            const y = yFor(tick)
+            return `<line class="static-chart-grid" x1="${margin.left}" x2="${width - margin.right}" y1="${y}" y2="${y}"></line><text class="static-chart-tick" x="${margin.left - 10}" y="${y + 4}" text-anchor="end">${tick}%</text>`
+          })
+          .join('')}
+        ${tiers.length > 1 ? `<polyline class="static-chart-line" points="${points}"></polyline>` : ''}
+        ${labels
+          .map((tier, index) => {
+            const x = xFor(tier.points)
+            const y = yFor(tier.chance)
+            const placeBelow = tier.chance >= 82
+            const offset = 16 + (index % 2) * 10
+            const labelY = Math.max(
+              margin.top + 10,
+              Math.min(height - margin.bottom - 6, y + (placeBelow ? offset : -offset)),
+            )
+            return `<text class="static-chart-point-label" x="${x}" y="${labelY}" text-anchor="middle">${tier.points}p ${formatPercent(tier.chance)}</text>`
+          })
+          .join('')}
+        ${tiers
+          .map((tier) => {
+            const x = xFor(tier.points)
+            const y = yFor(tier.chance)
+            return `<circle class="static-chart-dot" cx="${x}" cy="${y}" r="6"><title>${tier.points} pts: ${formatPercent(tier.chance)} odds; ${formatNumber(tier.eligibleApplicants)} applicants / ${formatNumber(tier.totalPermits)} permits</title></circle>`
+          })
+          .join('')}
+      </svg>
+    </div>`
+}
+
+function drawMetric(label, value) {
+  return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`
+}
+
+function pointDrawSide(hunt, residency, open = false) {
+  const side = hunt.odds?.[residency]
+  const residencyLabel = residency === 'resident' ? 'Resident' : 'Nonresident'
+  if (!side) return ''
+  const p50 = estimateP50Draw(hunt, residency)
+  const totalRatio = side.totals?.successRatio ?? 'Not reported'
+  const totalCounts = side.totals
+    ? `${formatNumber(side.totals.eligibleApplicants)} applicants / ${formatNumber(side.totals.totalPermits)} permits`
+    : 'Totals not reported'
+  const summary = p50 ? p50DrawText(p50) : totalRatio
+
+  return `
+    <details class="draw-residency" ${open ? 'open' : ''}>
+      <summary><span>${residencyLabel}</span><strong>${escapeHtml(summary)}</strong></summary>
+      <div class="draw-residency-body">
+        <div class="draw-card-head">
+          <span>${hunt.odds.year} points vs odds</span>
+          <strong>${escapeHtml(probableSummaryText(side))}</strong>
+        </div>
+        ${oddsChart(side, `${hunt.huntNumber}-${residency}`)}
+        <div class="draw-metric-grid">
+          ${drawMetric('Estimated P50 draw', p50 ? p50DrawText(p50) : 'Not estimable')}
+          ${drawMetric(`${hunt.odds.year} total`, totalRatio)}
+          ${drawMetric(`${PROBABLE_CHANCE}%+ begins`, firstProbablePointText(side))}
+          ${drawMetric('Near certain', pointSummaryText(side))}
+          ${drawMetric('Lowest point issued', String(side.summary?.lowestPointWithPermit ?? 'N/A'))}
+          ${drawMetric('Applicant pool', totalCounts)}
+        </div>
+      </div>
+    </details>`
+}
+
+function drawProfileHeadline(profile, side) {
+  if (!side) return 'No result for this residency'
+  if (profile.system === 'random') {
+    return Number.isFinite(side.odds)
+      ? `${formatPercent(side.odds)} first-choice odds`
+      : 'Random draw; odds not reported'
+  }
+  const randomPool =
+    side.pools.find((pool) => /regular random|random draw|first-choice/i.test(pool.label)) ??
+    side.pools[0]
+  const certainTier = usefulDrawTiers(side)
+    .filter((tier) => Number.isFinite(tier.odds) && tier.odds >= 99.5)
+    .sort((a, b) => Number(a.label) - Number(b.label))[0]
+  const parts = []
+  if (Number.isFinite(randomPool?.odds)) {
+    parts.push(`${formatPercent(randomPool.odds)} ${randomPool.label.toLowerCase()}`)
+  }
+  if (certainTier) parts.push(`100% at ${certainTier.label} pts`)
+  return parts.join('; ') || 'Pool-specific draw results'
+}
+
+function profileDrawSide(hunt, residency, open = false) {
+  const profile = hunt.drawProfile
+  const side = profile?.[residency] ?? null
+  if (!profile) return ''
+  const residencyLabel = residency === 'resident' ? 'Resident' : 'Nonresident'
+  const p50 = estimateP50Draw(hunt, residency)
+  const tiers = usefulDrawTiers(side)
+  const summary = p50
+    ? p50DrawText(p50)
+    : drawProfileHeadline(profile, side)
+
+  return `
+    <details class="draw-residency" ${open ? 'open' : ''}>
+      <summary><span>${residencyLabel}</span><strong>${escapeHtml(summary)}</strong></summary>
+      <div class="draw-residency-body">
+        <div class="draw-card-head">
+          <span>${profile.year} ${profile.system === 'random' ? 'random draw' : 'draw pools'}</span>
+          <strong>${escapeHtml(drawProfileHeadline(profile, side))}</strong>
+        </div>
+        ${
+          side
+            ? `<div class="draw-pool-grid">${side.pools
+                .slice(0, 4)
+                .map(
+                  (pool) =>
+                    `<div><span>${escapeHtml(pool.label)}</span><strong>${formatPercent(pool.odds)}</strong><small>${
+                      Number.isFinite(pool.applicants) && Number.isFinite(pool.permits)
+                        ? `${formatNumber(pool.permits)} permits / ${formatNumber(pool.applicants)} applicants`
+                        : 'Official reported result'
+                    }</small></div>`,
+                )
+                .join('')}${
+                  side.pools.length === 0
+                    ? `<div><span>Reported odds</span><strong>${formatPercent(side.odds)}</strong></div>`
+                    : ''
+                }</div>`
+            : '<p class="draw-empty">No result row for this residency and license type.</p>'
+        }
+        ${
+          tiers.length
+            ? `<div class="static-tier-list"><div><span>Preference tier</span><strong>Odds</strong></div>${tiers
+                .map(
+                  (tier) =>
+                    `<div><span><strong>${escapeHtml(tier.label)} pts</strong><small>${escapeHtml(tier.pool ?? 'Preference draw')}</small></span><strong>${formatPercent(tier.odds)}</strong></div>`,
+                )
+                .join('')}</div>`
+            : ''
+        }
+        <div class="draw-metric-grid">
+          ${drawMetric('Estimated P50 draw', p50 ? p50DrawText(p50) : 'Not estimable')}
+          ${drawMetric('Applicants', formatNumber(side?.applicants))}
+          ${drawMetric('Permits', formatNumber(side?.permits))}
+          ${drawMetric('Draw system', profile.system === 'random' ? 'Random; no points' : 'Preference + random')}
+        </div>
+      </div>
+    </details>`
+}
+
+function drawOutFinalLevelText(side) {
+  if (Number.isFinite(side?.finalDrawn) && Number.isFinite(side?.finalApplicants)) {
+    return `${side.finalDrawn} of ${side.finalApplicants} at final level`
+  }
+  return side?.finalLevel ?? 'N/A'
+}
+
+function drawOutSide(hunt, residency, open = false) {
+  const side = hunt.drawOut?.[residency]
+  if (!side || !hunt.drawOut) return ''
+  const residencyLabel = residency === 'resident' ? 'Resident' : 'Nonresident'
+  const drawnOutAt = side.drawnOutAt ?? 'Not issued'
+  return `
+    <details class="draw-residency" ${open ? 'open' : ''}>
+      <summary><span>${residencyLabel}</span><strong>${escapeHtml(drawnOutAt)}</strong></summary>
+      <div class="draw-residency-body">
+        <div class="draw-card-head">
+          <span>${hunt.drawOut.year} drawn out at</span>
+          <strong>${escapeHtml(drawnOutAt)}</strong>
+        </div>
+        <div class="draw-metric-grid">
+          ${drawMetric('Draw status', drawnOutAt)}
+          ${drawMetric('Final level', drawOutFinalLevelText(side))}
+        </div>
+      </div>
+    </details>`
+}
+
+function drawOutlook(group) {
+  const hunt = drawHunt(group)
+  if (hunt.odds) {
+    return `
+      <section class="draw-outlook" data-draw-format="point-odds">
+        <div class="section-heading">
+          <p class="eyebrow">Historical draw data</p>
+          <h2>Point-level draw outlook</h2>
+          <p>These are historical first-choice results for this exact hunt number, not a prediction. P50 estimates use the same point-tier calculation shown on Hunt Planner cards.</p>
+        </div>
+        ${pointDrawSide(hunt, 'resident', true)}
+        ${pointDrawSide(hunt, 'nonresident')}
+      </section>`
+  }
+  if (hunt.drawProfile) {
+    return `
+      <section class="draw-outlook" data-draw-format="draw-profile">
+        <div class="section-heading">
+          <p class="eyebrow">Historical draw data</p>
+          <h2>${hunt.drawProfile.system === 'random' ? 'Random draw outlook' : 'Preference and random draw outlook'}</h2>
+          <p>${escapeHtml(hunt.drawProfile.description)} P50 estimates use the same historical calculation shown on Hunt Planner cards.</p>
+        </div>
+        ${profileDrawSide(hunt, 'resident', true)}
+        ${profileDrawSide(hunt, 'nonresident')}
+      </section>`
+  }
+  if (hunt.drawOut) {
+    return `
+      <section class="draw-outlook" data-draw-format="draw-out">
+        <div class="section-heading">
+          <p class="eyebrow">Historical draw data</p>
+          <h2>Drawn-out-at results</h2>
+          <p>Historical results show the point or choice level where licenses ran out for this exact hunt code.</p>
+        </div>
+        ${drawOutSide(hunt, 'resident', true)}
+        ${drawOutSide(hunt, 'nonresident')}
+      </section>`
+  }
+  return `
+    <section class="draw-outlook draw-unavailable" data-draw-format="unavailable">
+      <div class="section-heading">
+        <p class="eyebrow">Historical draw data</p>
+        <h2>No matching draw history yet</h2>
+        <p>No parsed historical draw table is linked to hunt ${escapeHtml(group.huntNumber)}. Hunt Planner does not borrow odds from a neighboring hunt number or season because quotas, applicant pools and eligibility can differ.</p>
+      </div>
+      <a class="text-link" href="${plannerUrl(group)}">Check this hunt in the interactive planner</a>
+    </section>`
+}
+
+function drawSummaryMetric(group) {
+  const hunt = drawHunt(group)
+  const p50 = estimateP50Draw(hunt, 'resident')
+  if (p50) return { label: 'Est. resident P50', value: p50DrawText(p50) }
+  if (hunt.drawOut) {
+    return {
+      label: 'Resident draw',
+      value: hunt.drawOut.resident?.drawnOutAt ?? 'Not issued',
+    }
+  }
+  if (hunt.drawProfile?.resident && Number.isFinite(hunt.drawProfile.resident.odds)) {
+    return {
+      label: 'Resident draw',
+      value: formatPercent(hunt.drawProfile.resident.odds),
+    }
+  }
+  return { label: 'Draw history', value: 'Not available' }
+}
+
 function huntStats(group) {
   const hunt = primaryHunt(group)
   const quota = group.hunts.find((item) => item.quota)?.quota
   const harvest = group.hunts.find((item) => item.harvest)?.harvest
   const publicLand = group.hunts.find((item) => Number.isFinite(item.publicLandPercent))?.publicLandPercent
-  const odds = group.hunts.find((item) => item.odds)?.odds
-  const drawProfile = group.hunts.find((item) => item.drawProfile)?.drawProfile
-  const residentOdds = odds?.resident?.totals?.successRatio || (
-    Number.isFinite(drawProfile?.resident?.odds) ? `${drawProfile.resident.odds.toFixed(1)}%` : '—'
-  )
   return {
     hunt,
     quota,
     harvest,
     publicLand,
-    residentOdds,
+    drawSummary: drawSummaryMetric(group),
   }
 }
 
@@ -441,7 +892,7 @@ function statCards(group) {
       <div class="stat-card"><span>Season</span><strong>${escapeHtml(stats.hunt.seasonDateText || 'See agency')}</strong></div>
       <div class="stat-card"><span>Total permits</span><strong>${formatNumber(stats.quota?.total)}</strong></div>
       <div class="stat-card"><span>Harvest success</span><strong>${formatPercent(stats.harvest?.successRate)}</strong></div>
-      <div class="stat-card"><span>Resident draw</span><strong>${escapeHtml(stats.residentOdds || '—')}</strong></div>
+      <div class="stat-card"><span>${escapeHtml(stats.drawSummary.label)}</span><strong>${escapeHtml(stats.drawSummary.value)}</strong></div>
     </div>`
 }
 
@@ -539,7 +990,16 @@ function huntPage(group, related, matchingArticles) {
   ]
   const weapons = unique(group.hunts.map((hunt) => hunt.weapon))
   const seasons = unique(group.hunts.map((hunt) => hunt.seasonDateText))
-  const sources = unique(group.hunts.flatMap((hunt) => hunt.sourceUrls || [hunt.currentSourceUrl]))
+  const sources = unique(
+    group.hunts.flatMap((hunt) => [
+      hunt.currentSourceUrl,
+      hunt.odds?.sourceUrl,
+      hunt.drawProfile?.sourceUrl,
+      hunt.drawOut?.sourceUrl,
+      hunt.harvest?.sourceUrl,
+      ...(hunt.sourceUrls || []),
+    ]),
+  )
   const harvest = group.hunts.find((hunt) => hunt.harvest)?.harvest
   const quota = group.hunts.find((hunt) => hunt.quota)?.quota
   const publicLand = group.hunts.find((hunt) => Number.isFinite(hunt.publicLandPercent))?.publicLandPercent
@@ -579,6 +1039,7 @@ function huntPage(group, related, matchingArticles) {
         <h1 class="page-title">${escapeHtml(group.huntName)}</h1>
         <p class="dek">${escapeHtml(description)}</p>
         ${statCards(group)}
+        ${drawOutlook(group)}
         <aside class="action-band">
           <div><strong>Move from numbers to terrain</strong><span>Open this hunt in the interactive planner or inspect its boundary in 3D.</span></div>
           <div class="button-row">
@@ -882,7 +1343,10 @@ function main() {
   }
   if (!fs.existsSync(DIST)) throw new Error('dist/ does not exist; run the Vite build first')
 
-  const paths = ['/', '/hunts/', '/journal/']
+  const spaShell = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8')
+  writePage('/community/', spaShell)
+
+  const paths = ['/', '/hunts/', '/journal/', '/community/']
   writePage('/journal/', journalIndex(articles))
   writePage('/hunts/', huntLibraryIndex(groups))
 
