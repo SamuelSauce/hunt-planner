@@ -21,6 +21,7 @@ import idahoPlannerData from './data/idfg-data.json'
 import wyomingPlannerData from './data/wgfd-data.json'
 import { initAnalytics, trackEvent, trackPageView } from './analytics'
 import { estimateP50Draw, opportunityScore, type DrawTimeEstimate } from './drawMetrics'
+import { formatMapPin, parseMapPin, type MapPinLocation } from './mapPin'
 import { MapExplorer } from './MapExplorer'
 import './App.css'
 
@@ -316,6 +317,9 @@ function App() {
   const [map3dHunt, setMap3dHunt] = useState<Hunt | null>(
     view === 'planner' && initialShare.open3D ? initialShare.hunt : null,
   )
+  const [map3dPin, setMap3dPin] = useState<MapPinLocation | null>(
+    view === 'planner' && initialShare.open3D ? initialShare.pin : null,
+  )
   const [mapShareStatus, setMapShareStatus] = useState<ShareStatus>('idle')
   const [cardShareStatus, setCardShareStatus] = useState<{
     huntId: string
@@ -340,6 +344,7 @@ function App() {
       setWeapon(nextShare.weapon)
       setSelectedId(nextShare.hunt?.id ?? null)
       setMap3dHunt(nextView === 'planner' && nextShare.open3D ? nextShare.hunt : null)
+      setMap3dPin(nextView === 'planner' && nextShare.open3D ? nextShare.pin : null)
       setMapShareStatus('idle')
     }
     window.addEventListener('popstate', handlePopState)
@@ -414,13 +419,14 @@ function App() {
       residency,
       { species, category, weapon },
       map3dHunt?.id === selectedHunt.id,
+      map3dHunt?.id === selectedHunt.id ? map3dPin : null,
     )
     const path = `${window.location.pathname}${window.location.search}`
     if (lastTrackedPage.current !== path) {
       lastTrackedPage.current = path
       trackPageView(path)
     }
-  }, [category, map3dHunt, plannerState, residency, selectedHunt, species, view, weapon])
+  }, [category, map3dHunt, map3dPin, plannerState, residency, selectedHunt, species, view, weapon])
 
   useEffect(() => {
     if (view !== 'contact') return
@@ -537,6 +543,7 @@ function App() {
       window.history.pushState({ huntPlannerView: '3d' }, '', nextUrl)
     }
     setSelectedId(hunt.id)
+    setMap3dPin(null)
     setMapShareStatus('idle')
     setMap3dHunt(hunt)
   }
@@ -545,11 +552,12 @@ function App() {
       window.history.back()
       return
     }
+    setMap3dPin(null)
     setMapShareStatus('idle')
     setMap3dHunt(null)
   }
-  const shareHunt3DMap = (hunt: Hunt) => {
-    shareHunt3DMapLink(hunt, residency, { species, category, weapon })
+  const shareHunt3DMap = (hunt: Hunt, pin: MapPinLocation | null) => {
+    shareHunt3DMapLink(hunt, residency, { species, category, weapon }, pin)
       .then((result) => {
         if (result === 'dismissed') {
           setMapShareStatus('idle')
@@ -560,6 +568,7 @@ function App() {
           hunt_number: hunt.huntNumber,
           species: hunt.species,
           residency,
+          includes_pin: Boolean(pin),
         })
         setMapShareStatus(result)
         window.setTimeout(() => setMapShareStatus('idle'), 1600)
@@ -864,8 +873,13 @@ function App() {
         >
           <Hunt3DMap
             hunt={map3dHunt}
+            pin={map3dPin}
             shareStatus={mapShareStatus}
-            onShare={() => shareHunt3DMap(map3dHunt)}
+            onPinChange={(pin) => {
+              setMap3dPin(pin)
+              setMapShareStatus('idle')
+            }}
+            onShare={(pin) => shareHunt3DMap(map3dHunt, pin)}
             onClose={closeHunt3DMap}
           />
         </Suspense>
@@ -1995,6 +2009,7 @@ function getInitialShareState() {
     category: Category
     weapon: string
     open3D: boolean
+    pin: MapPinLocation | null
   } = {
     hunt: null,
     residency: 'resident',
@@ -2003,6 +2018,7 @@ function getInitialShareState() {
     category: 'general-otc',
     weapon: 'Any Legal Weapon (Late)',
     open3D: false,
+    pin: null,
   }
   if (typeof window === 'undefined') return fallback
 
@@ -2095,8 +2111,9 @@ function getInitialShareState() {
     ? weaponParam
     : defaultWeapon
   const open3D = params.get('view') === '3d' && hunt !== null
+  const pin = open3D ? parseMapPin(params.get('pin')) : null
 
-  return { hunt, residency, state: resolvedState, species, category, weapon, open3D }
+  return { hunt, residency, state: resolvedState, species, category, weapon, open3D, pin }
 }
 
 function normalizePlannerState(value: unknown): PlannerState | null {
@@ -2116,12 +2133,14 @@ function selectedHuntUrl(
   residency: Residency,
   filters?: PlannerFilters,
   open3D = false,
+  pin: MapPinLocation | null = null,
 ) {
   const url = appUrl('/')
   url.searchParams.set('state', stateCode(normalizePlannerState(hunt.state) ?? 'utah'))
   url.searchParams.set('hunt', hunt.huntNumber)
   url.searchParams.set('residency', residency)
   if (open3D) url.searchParams.set('view', '3d')
+  if (open3D && pin) url.searchParams.set('pin', formatMapPin(pin))
   if (filters) {
     url.searchParams.set('species', filters.species)
     url.searchParams.set('huntType', filters.category)
@@ -2196,11 +2215,12 @@ function replaceShareUrl(
   residency: Residency,
   filters: PlannerFilters,
   open3D = false,
+  pin: MapPinLocation | null = null,
 ) {
   if (typeof window === 'undefined') return
-  const nextUrl = selectedHuntUrl(hunt, residency, filters, open3D)
+  const nextUrl = selectedHuntUrl(hunt, residency, filters, open3D, pin)
   if (nextUrl !== window.location.href) {
-    window.history.replaceState(null, '', nextUrl)
+    window.history.replaceState(window.history.state, '', nextUrl)
   }
 }
 
@@ -2238,12 +2258,15 @@ async function shareHunt3DMapLink(
   hunt: Hunt,
   residency: Residency,
   filters: PlannerFilters,
+  pin: MapPinLocation | null,
 ): Promise<ShareResult> {
-  const shareUrl = selectedHuntUrl(hunt, residency, filters, true)
+  const shareUrl = selectedHuntUrl(hunt, residency, filters, true, pin)
   const stateLabel = stateMeta[normalizePlannerState(hunt.state) ?? 'utah'].name
   const shareData = {
-    title: `${stateLabel} 3D hunt map: ${hunt.huntName}`,
-    text: `Explore the 3D map for ${hunt.huntNumber} - ${hunt.huntName}.`,
+    title: `${stateLabel} 3D hunt map${pin ? ' pin' : ''}: ${hunt.huntName}`,
+    text: pin
+      ? `Open my marked location on the 3D map for ${hunt.huntNumber} - ${hunt.huntName}.`
+      : `Explore the 3D map for ${hunt.huntNumber} - ${hunt.huntName}.`,
     url: shareUrl,
   }
 

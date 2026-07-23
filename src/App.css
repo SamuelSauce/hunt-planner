@@ -1344,6 +1344,7 @@ textarea {
 .hunt-3d-boundary-key,
 .hunt-3d-loading,
 .hunt-3d-boundary-warning,
+.hunt-3d-pin-instruction,
 .hunt-3d-safety-note {
   position: absolute;
   z-index: 2;
@@ -1760,6 +1761,109 @@ textarea {
 .hunt-3d-tools button:disabled {
   cursor: wait;
   opacity: 0.55;
+}
+
+.hunt-3d-tools .hunt-3d-pin-tool {
+  grid-column: 1 / -1;
+  color: #ffe6dc;
+  background: rgba(214, 90, 46, 0.17);
+  border-color: rgba(243, 183, 158, 0.28);
+}
+
+.hunt-3d-tools .hunt-3d-pin-tool.active {
+  color: #17231b;
+  background: #f3b79e;
+  border-color: #ffd9c9;
+}
+
+.hunt-3d-pin-panel {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  background: rgba(214, 90, 46, 0.13);
+  border: 1px solid rgba(243, 183, 158, 0.24);
+  border-radius: 8px;
+}
+
+.hunt-3d-pin-panel > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.hunt-3d-pin-panel span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #ffe1d5;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.hunt-3d-pin-panel strong {
+  color: #aebfb4;
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.hunt-3d-pin-panel > div:last-child {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px;
+}
+
+.hunt-3d-pin-panel button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 10px;
+  color: #dce9df;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.hunt-3d-pin-panel button:nth-child(2) {
+  color: #fff;
+  background: #d65a2e;
+  border-color: #ed8b67;
+}
+
+.hunt-3d-pin-instruction {
+  display: inline-flex;
+  top: 108px;
+  left: 50%;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 13px;
+  color: #fff;
+  background: rgba(14, 29, 21, 0.94);
+  border: 1px solid rgba(243, 183, 158, 0.38);
+  border-radius: 9px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+  font-size: 0.73rem;
+  font-weight: 800;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.hunt-share-pin-marker::after {
+  position: absolute;
+  z-index: -1;
+  right: 50%;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  content: '';
+  background: rgba(233, 87, 39, 0.35);
+  border: 2px solid rgba(255, 230, 219, 0.88);
+  border-radius: 50%;
+  transform: translate(50%, 50%) rotateX(66deg);
 }
 
 .hunt-3d-location-error {
@@ -2207,6 +2311,10 @@ textarea {
   .hunt-3d-boundary-key,
   .hunt-3d-safety-note {
     display: none;
+  }
+
+  .hunt-3d-pin-instruction {
+    top: 96px;
   }
 
   .hunt-3d-modal .maplibregl-ctrl-bottom-right,
