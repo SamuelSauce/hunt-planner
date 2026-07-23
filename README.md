@@ -96,7 +96,7 @@ its own `work/` directory.
 
 ## Deployment
 
-The app builds to static files in `dist/` and is configured for Firebase
+The app builds to static files in `dist/client/` and is configured for Firebase
 Hosting:
 
 ```bash

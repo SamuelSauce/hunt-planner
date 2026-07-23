@@ -4,7 +4,7 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const DIST = path.join(ROOT, 'dist')
+const DIST = path.join(ROOT, 'dist', 'client')
 const CONTENT_DIR = path.join(ROOT, 'content', 'journal')
 const SITE_URL = (process.env.SITE_URL || 'https://huntplanner-66d5e.web.app').replace(/\/+$/, '')
 const GOOGLE_SITE_VERIFICATION =

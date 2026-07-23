@@ -4,11 +4,12 @@ import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
+const CLIENT = path.join(DIST, 'client')
 const SERVER = path.join(DIST, 'server')
 const HOSTING = path.join(ROOT, '.openai', 'hosting.json')
 
-if (!fs.existsSync(path.join(DIST, 'index.html'))) {
-  throw new Error('dist/index.html is missing; run the production build first')
+if (!fs.existsSync(path.join(CLIENT, 'index.html'))) {
+  throw new Error('dist/client/index.html is missing; run the production build first')
 }
 if (!fs.existsSync(HOSTING)) {
   throw new Error('.openai/hosting.json is missing')

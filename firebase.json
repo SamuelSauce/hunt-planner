@@ -1,7 +1,7 @@
 {
   "hosting": {
     "site": "huntplanner-66d5e",
-    "public": "dist",
+    "public": "dist/client",
     "ignore": [
       "firebase.json",
       "**/.*",

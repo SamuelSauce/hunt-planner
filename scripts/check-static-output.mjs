@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const DIST = path.join(ROOT, 'dist')
+const DIST = path.join(ROOT, 'dist', 'client')
 
 function walk(directory, extension) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -35,7 +35,7 @@ function assertFileForUrl(url, sourceFile) {
   }
 }
 
-if (!fs.existsSync(DIST)) fail('dist/ does not exist; build the site before running seo:check')
+if (!fs.existsSync(DIST)) fail('dist/client/ does not exist; build the site before running seo:check')
 
 const htmlFiles = walk(DIST, '.html')
 if (htmlFiles.length < 4000) fail(`Expected at least 4,000 HTML pages; found ${htmlFiles.length}`)
