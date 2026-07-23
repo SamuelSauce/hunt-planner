@@ -1930,9 +1930,9 @@ function getInitialShareState() {
     hunt: null,
     residency: 'resident',
     state: 'utah',
-    species: 'Elk',
-    category: 'all',
-    weapon: 'all',
+    species: 'Deer',
+    category: 'general-otc',
+    weapon: 'Any Legal Weapon (Late)',
   }
   if (typeof window === 'undefined') return fallback
 
@@ -1969,10 +1969,14 @@ function getInitialShareState() {
   const resolvedState = normalizePlannerState(hunt?.state) ?? state
   const stateHunts = plannerDataByState[resolvedState].hunts
   const speciesParam = params.get('species')?.trim()
+  const defaultSpecies = resolvedState === fallback.state
+    && stateHunts.some((candidate) => candidate.species === fallback.species)
+    ? fallback.species
+    : unique(stateHunts.map((candidate) => candidate.species)).sort()[0] ?? ''
   const species = hunt?.species
     ?? (speciesParam && stateHunts.some((candidate) => candidate.species === speciesParam)
       ? speciesParam
-      : unique(stateHunts.map((candidate) => candidate.species)).sort()[0] ?? fallback.species)
+      : defaultSpecies)
 
   const categoryParam = params.get('huntType') ?? params.get('category')
   const categoryMatchesState = categoryParam === 'all'
@@ -1982,9 +1986,17 @@ function getInitialShareState() {
   const categoryMatchesHunt = !hunt
     || categoryParam === 'all'
     || hunt.category === categoryParam
+  const defaultCategory = !hunt
+    && resolvedState === fallback.state
+    && species === fallback.species
+    && stateHunts.some(
+      (candidate) => candidate.species === species && candidate.category === fallback.category,
+    )
+    ? fallback.category
+    : 'all'
   const category: Category = categoryParam && categoryMatchesState && categoryMatchesHunt
     ? categoryParam as Category
-    : fallback.category
+    : defaultCategory
 
   const weaponParam = params.get('weapon')
   const weaponMatchesState = weaponParam === 'all'
@@ -1997,9 +2009,21 @@ function getInitialShareState() {
   const weaponMatchesHunt = !hunt
     || weaponParam === 'all'
     || weaponFilterValue(hunt, resolvedState, species) === weaponParam
+  const defaultWeapon = !hunt
+    && resolvedState === fallback.state
+    && species === fallback.species
+    && category === fallback.category
+    && stateHunts.some(
+      (candidate) =>
+        candidate.species === species
+        && candidate.category === category
+        && weaponFilterValue(candidate, resolvedState, species) === fallback.weapon,
+    )
+    ? fallback.weapon
+    : 'all'
   const weapon = weaponParam && weaponMatchesState && weaponMatchesHunt
     ? weaponParam
-    : fallback.weapon
+    : defaultWeapon
 
   return { hunt, residency, state: resolvedState, species, category, weapon }
 }
