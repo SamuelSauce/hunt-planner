@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
+  ChevronDown,
   Crosshair,
   Layers3,
   LoaderCircle,
@@ -8,9 +9,15 @@ import {
   Mountain,
   RotateCcw,
   Satellite,
+  Sparkles,
   X,
 } from 'lucide-react'
-import maplibregl, { type Map as MapLibreMap, type StyleSpecification } from 'maplibre-gl'
+import maplibregl, {
+  type GeoJSONSource,
+  type Map as MapLibreMap,
+  type StyleSpecification,
+} from 'maplibre-gl'
+import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   boundaryDataPath,
@@ -20,14 +27,25 @@ import {
   type MapHunt,
   type PlannerState,
 } from './MapExplorer'
+import {
+  buildHuntPotentialAnalysis,
+  type HuntPotentialAnalysis,
+  type PotentialZone,
+} from './huntPotentialAnalysis'
 
 type Basemap = 'satellite' | 'topographic'
 type LocationStatus = 'idle' | 'locating' | 'error'
+type PotentialStatus = 'idle' | 'analyzing' | 'ready' | 'error'
 
 const LAND_STATUS_LAYER = 'land-status-layer'
 const SATELLITE_LAYER = 'satellite-layer'
 const TOPOGRAPHIC_LAYER = 'topographic-layer'
 const TERRAIN_SOURCE = 'terrain-dem'
+const POTENTIAL_SOURCE = 'ai-potential-source'
+const POTENTIAL_HOTSPOT_SOURCE = 'ai-potential-hotspot-source'
+const POTENTIAL_HEAT_LAYER = 'ai-potential-heat'
+const POTENTIAL_HOTSPOT_LAYER = 'ai-potential-hotspots'
+const POTENTIAL_LABEL_LAYER = 'ai-potential-labels'
 
 const stateCamera: Record<PlannerState, { center: [number, number]; zoom: number }> = {
   utah: { center: [-111.65, 39.35], zoom: 6.6 },
@@ -60,6 +78,12 @@ export function Hunt3DMap({
   const [landStatusVisible, setLandStatusVisible] = useState(false)
   const [huntBoundaryVisible, setHuntBoundaryVisible] = useState(true)
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle')
+  const [layersExpanded, setLayersExpanded] = useState(
+    () => !window.matchMedia('(max-width: 760px)').matches,
+  )
+  const [potentialVisible, setPotentialVisible] = useState(false)
+  const [potentialStatus, setPotentialStatus] = useState<PotentialStatus>('idle')
+  const [potentialAnalysis, setPotentialAnalysis] = useState<HuntPotentialAnalysis | null>(null)
   const plannerState = hunt.state ?? 'utah'
   const dataPath = boundaryDataPath(plannerState, hunt.species, hunt.category)
 
@@ -256,6 +280,53 @@ export function Hunt3DMap({
     map.setLayoutProperty('hunt-boundary-line', 'visibility', visibility)
   }, [huntBoundaryVisible, mapReady])
 
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+
+    if (!potentialVisible) {
+      setPotentialLayerVisibility(map, false)
+      return
+    }
+
+    if (!boundaryFeatures?.length) {
+      return
+    }
+
+    if (potentialAnalysis && map.getSource(POTENTIAL_SOURCE)) {
+      setPotentialLayerVisibility(map, true)
+      return
+    }
+
+    let cancelled = false
+    let retryTimer: number | undefined
+    let attempt = 0
+
+    const analyzeTerrain = () => {
+      if (cancelled) return
+      attempt += 1
+      const analysis = buildHuntPotentialAnalysis(map, boundaryFeatures, hunt)
+      if (!analysis && attempt < 4) {
+        retryTimer = window.setTimeout(analyzeTerrain, 650)
+        return
+      }
+      if (!analysis) {
+        setPotentialStatus('error')
+        return
+      }
+
+      addPotentialLayers(map, analysis)
+      setPotentialAnalysis(analysis)
+      setPotentialStatus('ready')
+    }
+
+    retryTimer = window.setTimeout(analyzeTerrain, map.areTilesLoaded() ? 260 : 700)
+    return () => {
+      cancelled = true
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer)
+    }
+  }, [boundaryFeatures, hunt, mapReady, potentialAnalysis, potentialVisible])
+
   const locateUser = () => {
     if (!navigator.geolocation) {
       setLocationStatus('error')
@@ -275,6 +346,23 @@ export function Hunt3DMap({
       () => setLocationStatus('error'),
       { enableHighAccuracy: true, timeout: 10000 },
     )
+  }
+
+  const togglePotential = (checked: boolean) => {
+    setPotentialVisible(checked)
+    if (checked) setPotentialStatus(potentialAnalysis ? 'ready' : 'analyzing')
+  }
+
+  const focusPotentialZone = (zone: PotentialZone) => {
+    const map = mapRef.current
+    if (!map) return
+    map.flyTo({
+      center: zone.coordinate,
+      zoom: Math.max(map.getZoom(), 12.2),
+      pitch: terrainVisible ? 68 : 0,
+      bearing: map.getBearing(),
+      duration: 900,
+    })
   }
 
   return (
@@ -310,92 +398,122 @@ export function Hunt3DMap({
         </button>
       </header>
 
-      <aside className="hunt-3d-layers" aria-label="Map layers">
-        <div className="hunt-3d-panel-heading">
+      <aside
+        className={`hunt-3d-layers ${layersExpanded ? 'expanded' : 'collapsed'}`}
+        aria-label="Map layers"
+      >
+        <button
+          className="hunt-3d-panel-heading"
+          type="button"
+          aria-expanded={layersExpanded}
+          aria-controls="hunt-3d-layer-content"
+          onClick={() => setLayersExpanded((expanded) => !expanded)}
+        >
           <span>
             <Layers3 size={17} aria-hidden="true" />
             Layers
           </span>
-          <small>Drag to pan · Shift + drag to pivot</small>
-        </div>
+          <span className="hunt-3d-panel-action">
+            <small>{layersExpanded ? 'Drag to pan · Shift + drag to pivot' : 'Tap to open'}</small>
+            <ChevronDown size={17} aria-hidden="true" />
+          </span>
+        </button>
 
-        <fieldset className="hunt-3d-basemap-options">
-          <legend>Basemap</legend>
-          <div>
-            <button
-              type="button"
-              className={basemap === 'satellite' ? 'active' : ''}
-              aria-pressed={basemap === 'satellite'}
-              onClick={() => setBasemap('satellite')}
-            >
-              <Satellite size={17} aria-hidden="true" />
-              Satellite
-            </button>
-            <button
-              type="button"
-              className={basemap === 'topographic' ? 'active' : ''}
-              aria-pressed={basemap === 'topographic'}
-              onClick={() => setBasemap('topographic')}
-            >
-              <MapIcon size={17} aria-hidden="true" />
-              Topo
-            </button>
-          </div>
-        </fieldset>
-
-        <div className="hunt-3d-layer-list">
-          <LayerToggle
-            icon={<Mountain size={17} aria-hidden="true" />}
-            label="3D terrain"
-            detail="Elevation relief"
-            checked={terrainVisible}
-            onChange={setTerrainVisible}
-          />
-          <LayerToggle
-            icon={<Crosshair size={17} aria-hidden="true" />}
-            label="Hunt boundary"
-            detail={boundaryFeatures?.length ? `${boundaryFeatures.length} mapped area${boundaryFeatures.length === 1 ? '' : 's'}` : 'No matching polygon'}
-            checked={huntBoundaryVisible}
-            disabled={!boundaryFeatures?.length}
-            onChange={setHuntBoundaryVisible}
-          />
-          <LayerToggle
-            icon={<Layers3 size={17} aria-hidden="true" />}
-            label="Land status"
-            detail="Public, state & private/unknown"
-            checked={landStatusVisible}
-            onChange={setLandStatusVisible}
-          />
-        </div>
-
-        {landStatusVisible && (
-          <div className="hunt-3d-legend">
-            <strong>Surface management</strong>
+        <div id="hunt-3d-layer-content" className="hunt-3d-layer-content" hidden={!layersExpanded}>
+          <fieldset className="hunt-3d-basemap-options">
+            <legend>Basemap</legend>
             <div>
-              <span><i className="legend-blm" />BLM</span>
-              <span><i className="legend-forest" />Forest Service</span>
-              <span><i className="legend-state" />State / local</span>
-              <span><i className="legend-private" />Private / unknown</span>
+              <button
+                type="button"
+                className={basemap === 'satellite' ? 'active' : ''}
+                aria-pressed={basemap === 'satellite'}
+                onClick={() => setBasemap('satellite')}
+              >
+                <Satellite size={17} aria-hidden="true" />
+                Satellite
+              </button>
+              <button
+                type="button"
+                className={basemap === 'topographic' ? 'active' : ''}
+                aria-pressed={basemap === 'topographic'}
+                onClick={() => setBasemap('topographic')}
+              >
+                <MapIcon size={17} aria-hidden="true" />
+                Topo
+              </button>
             </div>
-            <small>Planning reference from BLM—not a legal parcel survey.</small>
-          </div>
-        )}
+          </fieldset>
 
-        <div className="hunt-3d-tools">
-          <button type="button" onClick={() => resetViewRef.current()} disabled={!mapReady}>
-            <RotateCcw size={16} aria-hidden="true" />
-            Reset view
-          </button>
-          <button type="button" onClick={locateUser} disabled={!mapReady || locationStatus === 'locating'}>
-            {locationStatus === 'locating'
-              ? <LoaderCircle className="spin" size={16} aria-hidden="true" />
-              : <LocateFixed size={16} aria-hidden="true" />}
-            {locationStatus === 'locating' ? 'Locating…' : 'My location'}
-          </button>
+          <div className="hunt-3d-layer-list">
+            <LayerToggle
+              icon={<Mountain size={17} aria-hidden="true" />}
+              label="3D terrain"
+              detail="Elevation relief"
+              checked={terrainVisible}
+              onChange={setTerrainVisible}
+            />
+            <LayerToggle
+              icon={<Crosshair size={17} aria-hidden="true" />}
+              label="Hunt boundary"
+              detail={boundaryFeatures?.length ? `${boundaryFeatures.length} mapped area${boundaryFeatures.length === 1 ? '' : 's'}` : 'No matching polygon'}
+              checked={huntBoundaryVisible}
+              disabled={!boundaryFeatures?.length}
+              onChange={setHuntBoundaryVisible}
+            />
+            <LayerToggle
+              icon={<Layers3 size={17} aria-hidden="true" />}
+              label="Land status"
+              detail="Public, state & private/unknown"
+              checked={landStatusVisible}
+              onChange={setLandStatusVisible}
+            />
+            <LayerToggle
+              icon={<Sparkles size={17} aria-hidden="true" />}
+              label="AI terrain scout"
+              detail={potentialStatus === 'analyzing' ? 'Analyzing terrain…' : 'Potential zones & reasons'}
+              checked={potentialVisible}
+              disabled={!boundaryFeatures?.length || !mapReady}
+              onChange={togglePotential}
+            />
+          </div>
+
+          {landStatusVisible && (
+            <div className="hunt-3d-legend">
+              <strong>Surface management</strong>
+              <div>
+                <span><i className="legend-blm" />BLM</span>
+                <span><i className="legend-forest" />Forest Service</span>
+                <span><i className="legend-state" />State / local</span>
+                <span><i className="legend-private" />Private / unknown</span>
+              </div>
+              <small>Planning reference from BLM—not a legal parcel survey.</small>
+            </div>
+          )}
+
+          {potentialVisible && (
+            <PotentialAnalysisPanel
+              analysis={potentialAnalysis}
+              status={potentialStatus}
+              onFocusZone={focusPotentialZone}
+            />
+          )}
+
+          <div className="hunt-3d-tools">
+            <button type="button" onClick={() => resetViewRef.current()} disabled={!mapReady}>
+              <RotateCcw size={16} aria-hidden="true" />
+              Reset view
+            </button>
+            <button type="button" onClick={locateUser} disabled={!mapReady || locationStatus === 'locating'}>
+              {locationStatus === 'locating'
+                ? <LoaderCircle className="spin" size={16} aria-hidden="true" />
+                : <LocateFixed size={16} aria-hidden="true" />}
+              {locationStatus === 'locating' ? 'Locating…' : 'My location'}
+            </button>
+          </div>
+          {locationStatus === 'error' && (
+            <p className="hunt-3d-location-error">Location is unavailable. Check browser permission and try again.</p>
+          )}
         </div>
-        {locationStatus === 'error' && (
-          <p className="hunt-3d-location-error">Location is unavailable. Check browser permission and try again.</p>
-        )}
       </aside>
 
       <div className="hunt-3d-boundary-key">
@@ -463,6 +581,77 @@ function LayerToggle({
       />
       <i className="hunt-3d-switch" aria-hidden="true" />
     </label>
+  )
+}
+
+function PotentialAnalysisPanel({
+  analysis,
+  status,
+  onFocusZone,
+}: {
+  analysis: HuntPotentialAnalysis | null
+  status: PotentialStatus
+  onFocusZone: (zone: PotentialZone) => void
+}) {
+  return (
+    <div className="hunt-3d-ai-panel" aria-live="polite">
+      <div className="hunt-3d-ai-heading">
+        <span>
+          <Sparkles size={15} aria-hidden="true" />
+          AI Terrain Scout
+        </span>
+        <i>Experimental</i>
+      </div>
+
+      {status === 'analyzing' && (
+        <div className="hunt-3d-ai-progress" role="status">
+          <LoaderCircle className="spin" size={18} aria-hidden="true" />
+          <span>
+            <strong>Reading the hunt terrain…</strong>
+            <small>Comparing elevation, relief, species, season, and weapon.</small>
+          </span>
+        </div>
+      )}
+
+      {status === 'error' && (
+        <p className="hunt-3d-ai-error">
+          Terrain analysis is unavailable here. Let the map finish loading, then toggle the scout off and on.
+        </p>
+      )}
+
+      {status === 'ready' && analysis && (
+        <>
+          <div className="hunt-3d-ai-summary">
+            <span>{analysis.confidence} terrain read</span>
+            <strong>{analysis.zones.length} zones worth a closer look</strong>
+            <p>{analysis.summary}</p>
+          </div>
+
+          <div className="hunt-3d-ai-zones">
+            {analysis.zones.map((zone) => (
+              <button key={zone.rank} type="button" onClick={() => onFocusZone(zone)}>
+                <i>{zone.rank}</i>
+                <span>
+                  <strong>{zone.location} · {zone.elevationFeet.toLocaleString()} ft</strong>
+                  <small>{zone.terrain} · potential {zone.score}/100</small>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <details className="hunt-3d-ai-details">
+            <summary>Why these zones?</summary>
+            <ul>
+              {analysis.signals.map((signal) => <li key={signal}>{signal}</li>)}
+            </ul>
+          </details>
+
+          <p className="hunt-3d-ai-disclaimer">
+            Terrain-based planning estimate—not a live animal prediction. It cannot see current cover, water, access, weather, fire, or hunting pressure.
+          </p>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -534,6 +723,109 @@ function mapStyle(): StyleSpecification {
   }
 }
 
+function addPotentialLayers(map: MapLibreMap, analysis: HuntPotentialAnalysis) {
+  const potentialSource = map.getSource(POTENTIAL_SOURCE) as GeoJSONSource | undefined
+  const hotspotSource = map.getSource(POTENTIAL_HOTSPOT_SOURCE) as GeoJSONSource | undefined
+
+  if (potentialSource) {
+    potentialSource.setData(analysis.points)
+  } else {
+    map.addSource(POTENTIAL_SOURCE, { type: 'geojson', data: analysis.points })
+  }
+
+  if (hotspotSource) {
+    hotspotSource.setData(analysis.hotspots)
+  } else {
+    map.addSource(POTENTIAL_HOTSPOT_SOURCE, { type: 'geojson', data: analysis.hotspots })
+  }
+
+  if (!map.getLayer(POTENTIAL_HEAT_LAYER)) {
+    map.addLayer({
+      id: POTENTIAL_HEAT_LAYER,
+      type: 'heatmap',
+      source: POTENTIAL_SOURCE,
+      paint: {
+        'heatmap-weight': [
+          'interpolate',
+          ['linear'],
+          ['get', 'score'],
+          58, 0.08,
+          89, 1,
+        ],
+        'heatmap-intensity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          6, 0.75,
+          12, 1.25,
+        ],
+        'heatmap-radius': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          6, 30,
+          12, 72,
+        ],
+        'heatmap-opacity': 0.82,
+        'heatmap-color': [
+          'interpolate',
+          ['linear'],
+          ['heatmap-density'],
+          0, 'rgba(70, 220, 170, 0)',
+          0.2, 'rgba(70, 220, 170, 0.24)',
+          0.48, 'rgba(174, 239, 118, 0.48)',
+          0.72, 'rgba(255, 221, 92, 0.68)',
+          1, 'rgba(255, 127, 66, 0.86)',
+        ],
+      },
+    })
+  }
+
+  if (!map.getLayer(POTENTIAL_HOTSPOT_LAYER)) {
+    map.addLayer({
+      id: POTENTIAL_HOTSPOT_LAYER,
+      type: 'circle',
+      source: POTENTIAL_HOTSPOT_SOURCE,
+      paint: {
+        'circle-radius': 14,
+        'circle-color': '#112f25',
+        'circle-stroke-color': '#e8ff8b',
+        'circle-stroke-width': 3,
+        'circle-blur': 0.05,
+      },
+    })
+  }
+
+  if (!map.getLayer(POTENTIAL_LABEL_LAYER)) {
+    map.addLayer({
+      id: POTENTIAL_LABEL_LAYER,
+      type: 'symbol',
+      source: POTENTIAL_HOTSPOT_SOURCE,
+      layout: {
+        'text-field': ['to-string', ['get', 'rank']],
+        'text-size': 12,
+        'text-font': ['Open Sans Bold'],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+      },
+      paint: {
+        'text-color': '#ffffff',
+        'text-halo-color': '#112f25',
+        'text-halo-width': 1,
+      },
+    })
+  }
+
+  setPotentialLayerVisibility(map, true)
+}
+
+function setPotentialLayerVisibility(map: MapLibreMap, visible: boolean) {
+  const visibility = visible ? 'visible' : 'none'
+  ;[POTENTIAL_HEAT_LAYER, POTENTIAL_HOTSPOT_LAYER, POTENTIAL_LABEL_LAYER].forEach((layer) => {
+    if (map.getLayer(layer)) map.setLayoutProperty(layer, 'visibility', visibility)
+  })
+}
+
 function installShiftPivotGesture(map: MapLibreMap) {
   let lastPointer: { x: number; y: number } | null = null
 
@@ -586,16 +878,24 @@ function installShiftPivotGesture(map: MapLibreMap) {
   }
 }
 
-function boundaryFeatureCollection(features: BoundaryFeature[]) {
+function boundaryFeatureCollection(features: BoundaryFeature[]): FeatureCollection<Polygon | MultiPolygon> {
   return {
-    type: 'FeatureCollection' as const,
+    type: 'FeatureCollection',
     features: features.map((feature) => ({
-      type: 'Feature' as const,
+      type: 'Feature',
       properties: {
         id: feature.id,
         name: feature.name,
       },
-      geometry: feature.geometry,
+      geometry: feature.geometry.type === 'Polygon'
+        ? {
+            type: 'Polygon',
+            coordinates: feature.geometry.coordinates as number[][][],
+          }
+        : {
+            type: 'MultiPolygon',
+            coordinates: feature.geometry.coordinates as number[][][][],
+          },
     })),
   }
 }
