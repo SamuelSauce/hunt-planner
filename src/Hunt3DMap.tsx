@@ -299,15 +299,19 @@ export function Hunt3DMap({
     let marker = pinMarkerRef.current
     if (!marker) {
       marker = new maplibregl.Marker({ color: '#e95727', scale: 1.15 })
-        .addTo(map)
       marker.getElement().classList.add('hunt-share-pin-marker')
       marker.getElement().setAttribute('role', 'img')
       pinMarkerRef.current = marker
+      marker.setLngLat([pin.longitude, pin.latitude]).addTo(map)
+    } else {
+      marker.setLngLat([pin.longitude, pin.latitude])
     }
     marker
-      .setLngLat([pin.longitude, pin.latitude])
       .getElement()
-      .setAttribute('aria-label', `Shared pin at ${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}`)
+      .setAttribute(
+        'aria-label',
+        `Shared pin at ${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}`,
+      )
   }, [mapReady, pin])
 
   useEffect(() => {
