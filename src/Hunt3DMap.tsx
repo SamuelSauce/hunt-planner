@@ -57,7 +57,7 @@ export function Hunt3DMap({
   const [mapError, setMapError] = useState(false)
   const [basemap, setBasemap] = useState<Basemap>('satellite')
   const [terrainVisible, setTerrainVisible] = useState(true)
-  const [landStatusVisible, setLandStatusVisible] = useState(true)
+  const [landStatusVisible, setLandStatusVisible] = useState(false)
   const [huntBoundaryVisible, setHuntBoundaryVisible] = useState(true)
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle')
   const plannerState = hunt.state ?? 'utah'
@@ -152,6 +152,7 @@ export function Hunt3DMap({
       }),
       'bottom-right',
     )
+    const removeShiftPivotGesture = installShiftPivotGesture(map)
 
     const fitToHunt = () => {
       const bounds = featureBounds(boundaryFeatures)
@@ -219,6 +220,7 @@ export function Hunt3DMap({
     })
 
     return () => {
+      removeShiftPivotGesture()
       resetViewRef.current = () => undefined
       mapRef.current = null
       map.remove()
@@ -314,7 +316,7 @@ export function Hunt3DMap({
             <Layers3 size={17} aria-hidden="true" />
             Layers
           </span>
-          <small>Drag to pan · Ctrl + drag to tilt</small>
+          <small>Drag to pan · Shift + drag to pivot</small>
         </div>
 
         <fieldset className="hunt-3d-basemap-options">
@@ -518,8 +520,9 @@ function mapStyle(): StyleSpecification {
         id: LAND_STATUS_LAYER,
         type: 'raster',
         source: 'land-status',
+        layout: { visibility: 'none' },
         paint: {
-          'raster-opacity': 0.58,
+          'raster-opacity': 0.34,
           'raster-fade-duration': 180,
         },
       },
@@ -528,6 +531,58 @@ function mapStyle(): StyleSpecification {
       source: TERRAIN_SOURCE,
       exaggeration: 1.25,
     },
+  }
+}
+
+function installShiftPivotGesture(map: MapLibreMap) {
+  let lastPointer: { x: number; y: number } | null = null
+
+  function stopPivoting() {
+    lastPointer = null
+    document.removeEventListener('mousemove', pivotMap)
+    document.removeEventListener('mouseup', stopPivoting)
+  }
+
+  function pivotMap(event: MouseEvent) {
+    if (!lastPointer || (event.buttons & 1) === 0) {
+      stopPivoting()
+      return
+    }
+
+    const deltaX = event.clientX - lastPointer.x
+    const deltaY = event.clientY - lastPointer.y
+    lastPointer = { x: event.clientX, y: event.clientY }
+    event.preventDefault()
+
+    map.jumpTo({
+      bearing: map.getBearing() + deltaX * 0.8,
+      pitch: Math.max(0, Math.min(map.getMaxPitch(), map.getPitch() - deltaY * 0.5)),
+    })
+  }
+
+  const handleMouseDown = (event: maplibregl.MapMouseEvent) => {
+    const mouseEvent = event.originalEvent
+    if (mouseEvent.button !== 0) return
+
+    if (mouseEvent.ctrlKey) {
+      event.preventDefault()
+      return
+    }
+
+    if (!mouseEvent.shiftKey) return
+
+    event.preventDefault()
+    lastPointer = { x: mouseEvent.clientX, y: mouseEvent.clientY }
+    document.addEventListener('mousemove', pivotMap)
+    document.addEventListener('mouseup', stopPivoting)
+  }
+
+  map.on('mousedown', handleMouseDown)
+
+  return () => {
+    map.off('mousedown', handleMouseDown)
+    document.removeEventListener('mousemove', pivotMap)
+    document.removeEventListener('mouseup', stopPivoting)
   }
 }
 
