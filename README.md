@@ -12,6 +12,8 @@ Colorado, Idaho, and Wyoming.
 - Preference-point draw curves with an estimated P50 draw time.
 - An opportunity score that combines estimated draw time and harvest success.
 - Interactive hunt-boundary maps colored by harvest, draw time, or opportunity.
+- Full-screen 3D hunt maps with satellite/topographic basemaps, terrain, and
+  BLM surface-management status.
 - Shareable hunt links, agency boundary links, and a contact page for data
   corrections.
 

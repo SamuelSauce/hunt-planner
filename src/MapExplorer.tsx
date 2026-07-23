@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { LoaderCircle, MapPinned } from 'lucide-react'
 import { estimateP50Draw, opportunityScore } from './drawMetrics'
 
-type PlannerState = 'utah' | 'colorado' | 'idaho' | 'wyoming'
+export type PlannerState = 'utah' | 'colorado' | 'idaho' | 'wyoming'
 type Residency = 'resident' | 'nonresident'
 type MetricMode = 'harvest' | 'draw' | 'opportunity'
 type MetricRange = { min: number; max: number } | null
@@ -26,7 +26,7 @@ type MapDrawProfileSide = {
   }>
 }
 
-type MapHunt = {
+export type MapHunt = {
   id: string
   state?: PlannerState
   huntNumber: string
@@ -45,7 +45,7 @@ type MapHunt = {
   } | null
 }
 
-type BoundaryFeature = {
+export type BoundaryFeature = {
   id: string
   name: string
   detail?: string | null
@@ -57,7 +57,7 @@ type BoundaryFeature = {
   }
 }
 
-type BoundaryData = {
+export type BoundaryData = {
   state: PlannerState
   year: number
   label: string
@@ -274,7 +274,7 @@ export function MapExplorer({
   )
 }
 
-function boundaryDataPath(state: PlannerState, species: string, category: string) {
+export function boundaryDataPath(state: PlannerState, species: string, category: string) {
   if (state === 'utah') return '/data/boundaries/utah.json'
   if (state === 'colorado') return '/data/boundaries/colorado.json'
   if (state === 'idaho') {
@@ -298,7 +298,7 @@ function boundaryDataPath(state: PlannerState, species: string, category: string
   return null
 }
 
-function featureMatchesHunt(feature: BoundaryFeature, hunt: MapHunt) {
+export function featureMatchesHunt(feature: BoundaryFeature, hunt: MapHunt) {
   if (feature.species && feature.species !== hunt.species) return false
   if (feature.huntNumbers?.includes(hunt.huntNumber)) return true
   if (hunt.mapUnitIds?.some((id) => normalizeUnit(id) === normalizeUnit(feature.id))) return true

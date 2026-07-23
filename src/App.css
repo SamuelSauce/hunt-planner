@@ -571,8 +571,10 @@ textarea {
 
 .hunt-map-link,
 .hunt-share-link,
+.hunt-3d-link,
 .detail-map-link,
-.detail-share-link {
+.detail-share-link,
+.detail-3d-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -599,7 +601,8 @@ textarea {
 }
 
 .hunt-map-link,
-.hunt-share-link {
+.hunt-share-link,
+.hunt-3d-link {
   width: fit-content;
   min-height: 28px;
   padding: 0 9px;
@@ -607,16 +610,26 @@ textarea {
 }
 
 .detail-map-link,
-.detail-share-link {
+.detail-share-link,
+.detail-3d-link {
   min-height: 34px;
   padding: 0 11px;
   font-size: 0.82rem;
 }
 
 .hunt-share-link,
-.detail-share-link {
+.hunt-3d-link,
+.detail-share-link,
+.detail-3d-link {
   cursor: pointer;
   font: inherit;
+}
+
+.hunt-3d-link,
+.detail-3d-link {
+  color: #fff;
+  background: #244735;
+  border-color: #244735;
 }
 
 .hunt-share-link.copied,
@@ -1309,6 +1322,502 @@ textarea {
   cursor: pointer;
 }
 
+.hunt-3d-modal {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  overflow: hidden;
+  color: #edf5ef;
+  background: #0b1610;
+  isolation: isolate;
+}
+
+.hunt-3d-modal .hunt-3d-map-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.hunt-3d-header,
+.hunt-3d-layers,
+.hunt-3d-boundary-key,
+.hunt-3d-loading,
+.hunt-3d-boundary-warning,
+.hunt-3d-safety-note {
+  position: absolute;
+  z-index: 2;
+}
+
+.hunt-3d-header {
+  display: flex;
+  top: 16px;
+  right: 16px;
+  left: 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 76px;
+  padding: 12px 14px;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(14, 29, 21, 0.96), rgba(14, 29, 21, 0.88));
+  border: 1px solid rgba(230, 240, 232, 0.18);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(16px);
+}
+
+.hunt-3d-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.hunt-3d-title > div {
+  min-width: 0;
+}
+
+.hunt-3d-mark {
+  display: grid;
+  width: 43px;
+  height: 43px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #fff;
+  background: #d65a2e;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(214, 90, 46, 0.28);
+}
+
+.hunt-3d-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #abc4b4;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.hunt-3d-kicker i {
+  padding: 3px 5px;
+  color: #ffe4d7;
+  background: rgba(214, 90, 46, 0.28);
+  border: 1px solid rgba(255, 198, 173, 0.26);
+  border-radius: 4px;
+  font-size: 0.58rem;
+  font-style: normal;
+}
+
+.hunt-3d-title h2 {
+  overflow: hidden;
+  margin: 4px 0 1px;
+  color: #fff;
+  font-size: 1.08rem;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hunt-3d-title p {
+  overflow: hidden;
+  color: #c1d1c6;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hunt-3d-close {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  pointer-events: auto;
+  place-items: center;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.hunt-3d-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.hunt-3d-layers {
+  display: grid;
+  top: 108px;
+  right: 16px;
+  width: 342px;
+  gap: 13px;
+  padding: 14px;
+  color: #dce9df;
+  background: rgba(14, 29, 21, 0.93);
+  border: 1px solid rgba(230, 240, 232, 0.18);
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(16px);
+}
+
+.hunt-3d-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hunt-3d-panel-heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.hunt-3d-panel-heading small {
+  color: #8fa79a;
+  font-size: 0.62rem;
+}
+
+.hunt-3d-basemap-options {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.hunt-3d-basemap-options legend {
+  margin-bottom: 6px;
+  color: #8fa79a;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.hunt-3d-basemap-options > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.hunt-3d-basemap-options button,
+.hunt-3d-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  color: #c9d8ce;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.hunt-3d-basemap-options button.active {
+  color: #fff;
+  background: #315b45;
+  border-color: #658d75;
+}
+
+.hunt-3d-layer-list {
+  display: grid;
+  gap: 2px;
+}
+
+.hunt-3d-layer-list label {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 5px 3px;
+  cursor: pointer;
+}
+
+.hunt-3d-layer-list label.disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.hunt-3d-layer-icon {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  color: #f3b79e;
+  background: rgba(214, 90, 46, 0.16);
+  border-radius: 7px;
+}
+
+.hunt-3d-layer-list label > span:nth-child(2) {
+  display: grid;
+}
+
+.hunt-3d-layer-list strong {
+  color: #edf5ef;
+  font-size: 0.78rem;
+}
+
+.hunt-3d-layer-list small {
+  color: #8fa79a;
+  font-size: 0.65rem;
+}
+
+.hunt-3d-layer-list input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.hunt-3d-switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  background: #405047;
+  border-radius: 99px;
+  transition: background 160ms ease;
+}
+
+.hunt-3d-switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  content: '';
+  background: #d4ded7;
+  border-radius: 50%;
+  transition: transform 160ms ease;
+}
+
+.hunt-3d-layer-list input:checked + .hunt-3d-switch {
+  background: #d65a2e;
+}
+
+.hunt-3d-layer-list input:checked + .hunt-3d-switch::after {
+  background: #fff;
+  transform: translateX(14px);
+}
+
+.hunt-3d-layer-list input:focus-visible + .hunt-3d-switch {
+  outline: 3px solid rgba(117, 188, 220, 0.5);
+  outline-offset: 2px;
+}
+
+.hunt-3d-legend {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.hunt-3d-legend > strong {
+  color: #dce9df;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.hunt-3d-legend > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+}
+
+.hunt-3d-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #bdcec3;
+  font-size: 0.64rem;
+}
+
+.hunt-3d-legend i {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 2px;
+}
+
+.hunt-3d-legend .legend-blm {
+  background: #fee679;
+}
+
+.hunt-3d-legend .legend-forest {
+  background: #ccebc5;
+}
+
+.hunt-3d-legend .legend-state {
+  background: #b3e3ee;
+}
+
+.hunt-3d-legend .legend-private {
+  background: #fff;
+}
+
+.hunt-3d-legend small {
+  color: #8fa79a;
+  font-size: 0.61rem;
+  line-height: 1.3;
+}
+
+.hunt-3d-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.hunt-3d-tools button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.hunt-3d-location-error {
+  color: #ffc6b0;
+  font-size: 0.68rem;
+  line-height: 1.3;
+}
+
+.hunt-3d-boundary-key {
+  display: flex;
+  bottom: 44px;
+  left: 16px;
+  align-items: center;
+  gap: 10px;
+  max-width: 310px;
+  padding: 10px 12px;
+  color: #e8f1eb;
+  background: rgba(14, 29, 21, 0.9);
+  border: 1px solid rgba(230, 240, 232, 0.16);
+  border-radius: 9px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.23);
+  backdrop-filter: blur(12px);
+}
+
+.hunt-3d-boundary-key > i {
+  width: 30px;
+  height: 0;
+  border-top: 4px dashed #e95727;
+}
+
+.hunt-3d-boundary-key > div {
+  display: grid;
+  min-width: 0;
+}
+
+.hunt-3d-boundary-key strong,
+.hunt-3d-boundary-key span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hunt-3d-boundary-key strong {
+  font-size: 0.72rem;
+}
+
+.hunt-3d-boundary-key span {
+  color: #a9bcae;
+  font-size: 0.64rem;
+}
+
+.hunt-3d-safety-note {
+  right: 380px;
+  bottom: 14px;
+  left: 380px;
+  color: rgba(240, 247, 242, 0.82);
+  filter: drop-shadow(0 1px 3px #000);
+  font-size: 0.64rem;
+  line-height: 1.2;
+  text-align: center;
+  text-shadow: 0 1px 4px #000;
+}
+
+.hunt-3d-loading {
+  display: flex;
+  top: 50%;
+  left: 50%;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 16px;
+  color: #e8f1eb;
+  background: rgba(14, 29, 21, 0.94);
+  border: 1px solid rgba(230, 240, 232, 0.18);
+  border-radius: 9px;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.35);
+  font-size: 0.78rem;
+  font-weight: 750;
+  transform: translate(-50%, -50%);
+}
+
+.hunt-3d-loading.error {
+  color: #ffd9ca;
+}
+
+.hunt-3d-boundary-warning {
+  top: 108px;
+  left: 16px;
+  max-width: 360px;
+  padding: 10px 12px;
+  color: #ffd9ca;
+  background: rgba(91, 43, 26, 0.9);
+  border: 1px solid rgba(255, 191, 165, 0.26);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.hunt-3d-modal .maplibregl-ctrl-group {
+  overflow: hidden;
+  background: rgba(14, 29, 21, 0.91);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
+.hunt-3d-modal .maplibregl-ctrl-group button + button {
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+.hunt-3d-modal .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+
+.hunt-3d-modal .maplibregl-ctrl-attrib {
+  color: #c2d0c6;
+  background: rgba(14, 29, 21, 0.8);
+}
+
+.hunt-3d-modal .maplibregl-ctrl-attrib a {
+  color: #e7efe9;
+}
+
+.hunt-3d-modal .maplibregl-ctrl-scale {
+  color: #fff;
+  background: rgba(14, 29, 21, 0.7);
+  border-color: #fff;
+  text-shadow: 0 1px 3px #000;
+}
+
+.hunt-3d-modal .maplibregl-canvas:focus-visible {
+  outline: 3px solid rgba(117, 188, 220, 0.65);
+  outline-offset: -4px;
+}
+
 .contact-note {
   margin: 12px 0 0;
   line-height: 1.35;
@@ -1388,6 +1897,49 @@ textarea {
   .report-panel {
     margin: 0;
   }
+
+  .hunt-3d-header {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+  }
+
+  .hunt-3d-layers {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    max-height: 248px;
+    overflow: auto;
+  }
+
+  .hunt-3d-layer-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .hunt-3d-layer-list label {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .hunt-3d-layer-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .hunt-3d-legend {
+    display: none;
+  }
+
+  .hunt-3d-boundary-key,
+  .hunt-3d-safety-note {
+    display: none;
+  }
+
+  .hunt-3d-modal .maplibregl-ctrl-bottom-right,
+  .hunt-3d-modal .maplibregl-ctrl-bottom-left {
+    bottom: 260px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1423,5 +1975,23 @@ textarea {
   .drawout-grid,
   .draw-pool-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hunt-3d-mark {
+    display: none;
+  }
+
+  .hunt-3d-panel-heading small,
+  .hunt-3d-layer-list small {
+    display: none;
+  }
+
+  .hunt-3d-layer-list {
+    grid-template-columns: 1fr;
+  }
+
+  .hunt-3d-layer-list label {
+    min-height: 38px;
+    padding: 1px 3px;
   }
 }
