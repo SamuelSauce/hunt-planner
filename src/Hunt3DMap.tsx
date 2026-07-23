@@ -6,6 +6,7 @@ import {
   LoaderCircle,
   LocateFixed,
   Map as MapIcon,
+  MapPin,
   Mountain,
   RotateCcw,
   Satellite,
@@ -33,6 +34,7 @@ import {
   type HuntPotentialAnalysis,
   type PotentialZone,
 } from './huntPotentialAnalysis'
+import { normalizeMapPin, type MapPinLocation } from './mapPin'
 
 type Basemap = 'satellite' | 'topographic'
 type LocationStatus = 'idle' | 'locating' | 'error'
@@ -59,7 +61,9 @@ const stateCamera: Record<PlannerState, { center: [number, number]; zoom: number
 
 export function Hunt3DMap({
   hunt,
+  pin,
   shareStatus,
+  onPinChange,
   onShare,
   onClose,
 }: {
@@ -68,12 +72,16 @@ export function Hunt3DMap({
     weapon: string
     seasonDateText: string | null
   }
+  pin: MapPinLocation | null
   shareStatus: 'idle' | 'shared' | 'copied' | 'error'
-  onShare: () => void
+  onPinChange: (pin: MapPinLocation | null) => void
+  onShare: (pin: MapPinLocation | null) => void
   onClose: () => void
 }) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
+  const pinMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const pinRef = useRef<MapPinLocation | null>(pin)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   const resetViewRef = useRef<() => void>(() => undefined)
   const [boundaryFeatures, setBoundaryFeatures] = useState<BoundaryFeature[] | null>(null)
@@ -89,6 +97,7 @@ export function Hunt3DMap({
   const [potentialVisible, setPotentialVisible] = useState(false)
   const [potentialStatus, setPotentialStatus] = useState<PotentialStatus>('idle')
   const [potentialAnalysis, setPotentialAnalysis] = useState<HuntPotentialAnalysis | null>(null)
+  const [dropPinMode, setDropPinMode] = useState(false)
   const plannerState = hunt.state ?? 'utah'
   const dataPath = boundaryDataPath(plannerState, hunt.species, hunt.category)
 
@@ -253,17 +262,82 @@ export function Hunt3DMap({
           SATELLITE_TRANSPORTATION_LAYER,
         )
       }
-      fitToHunt()
+      const sharedPin = pinRef.current
+      if (sharedPin) {
+        map.easeTo({
+          center: [sharedPin.longitude, sharedPin.latitude],
+          zoom: 14,
+          pitch: 68,
+          bearing: -24,
+          duration: 700,
+        })
+      } else {
+        fitToHunt()
+      }
       setMapReady(true)
     })
 
     return () => {
       removeShiftPivotGesture()
+      pinMarkerRef.current = null
       resetViewRef.current = () => undefined
       mapRef.current = null
       map.remove()
     }
   }, [boundaryFeatures, plannerState])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+
+    if (!pin) {
+      pinMarkerRef.current?.remove()
+      pinMarkerRef.current = null
+      return
+    }
+
+    let marker = pinMarkerRef.current
+    if (!marker) {
+      marker = new maplibregl.Marker({ color: '#e95727', scale: 1.15 })
+      marker.getElement().classList.add('hunt-share-pin-marker')
+      marker.getElement().setAttribute('role', 'img')
+      pinMarkerRef.current = marker
+      marker.setLngLat([pin.longitude, pin.latitude]).addTo(map)
+    } else {
+      marker.setLngLat([pin.longitude, pin.latitude])
+    }
+    marker
+      .getElement()
+      .setAttribute(
+        'aria-label',
+        `Shared pin at ${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}`,
+      )
+  }, [mapReady, pin])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !dropPinMode) return
+
+    const canvas = map.getCanvas()
+    const previousCursor = canvas.style.cursor
+    canvas.style.cursor = 'crosshair'
+
+    const handleMapClick = (event: maplibregl.MapMouseEvent) => {
+      const nextPin = normalizeMapPin({
+        longitude: event.lngLat.lng,
+        latitude: event.lngLat.lat,
+      })
+      pinRef.current = nextPin
+      setDropPinMode(false)
+      onPinChange(nextPin)
+    }
+
+    map.on('click', handleMapClick)
+    return () => {
+      canvas.style.cursor = previousCursor
+      map.off('click', handleMapClick)
+    }
+  }, [dropPinMode, mapReady, onPinChange])
 
   useEffect(() => {
     const map = mapRef.current
@@ -381,6 +455,22 @@ export function Hunt3DMap({
     })
   }
 
+  const focusPin = () => {
+    if (!pin) return
+    mapRef.current?.flyTo({
+      center: [pin.longitude, pin.latitude],
+      zoom: Math.max(mapRef.current.getZoom(), 14),
+      pitch: terrainVisible ? 68 : 0,
+      duration: 800,
+    })
+  }
+
+  const clearPin = () => {
+    pinRef.current = null
+    setDropPinMode(false)
+    onPinChange(null)
+  }
+
   return (
     <section
       className="hunt-3d-modal"
@@ -407,7 +497,7 @@ export function Hunt3DMap({
           <button
             className={`hunt-3d-share ${shareStatus === 'copied' || shareStatus === 'shared' ? 'copied' : ''}`}
             type="button"
-            onClick={onShare}
+            onClick={() => onShare(pin)}
           >
             <Share2 size={18} aria-hidden="true" />
             <span>
@@ -417,7 +507,9 @@ export function Hunt3DMap({
                   ? 'Link copied'
                   : shareStatus === 'error'
                     ? 'Copy failed'
-                    : 'Share 3D map'}
+                    : pin
+                      ? 'Share pin'
+                      : 'Share 3D map'}
             </span>
           </button>
           <button
@@ -533,6 +625,16 @@ export function Hunt3DMap({
           )}
 
           <div className="hunt-3d-tools">
+            <button
+              className={`hunt-3d-pin-tool ${dropPinMode ? 'active' : ''}`}
+              type="button"
+              aria-pressed={dropPinMode}
+              onClick={() => setDropPinMode((active) => !active)}
+              disabled={!mapReady}
+            >
+              <MapPin size={16} aria-hidden="true" />
+              {dropPinMode ? 'Cancel pin drop' : pin ? 'Move pin' : 'Drop pin'}
+            </button>
             <button type="button" onClick={() => resetViewRef.current()} disabled={!mapReady}>
               <RotateCcw size={16} aria-hidden="true" />
               Reset view
@@ -544,11 +646,38 @@ export function Hunt3DMap({
               {locationStatus === 'locating' ? 'Locating…' : 'My location'}
             </button>
           </div>
+          {pin && (
+            <div className="hunt-3d-pin-panel" aria-live="polite">
+              <div>
+                <span><MapPin size={15} aria-hidden="true" /> Dropped pin</span>
+                <strong>{pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}</strong>
+              </div>
+              <div>
+                <button type="button" onClick={focusPin}>View</button>
+                <button type="button" onClick={() => onShare(pin)}>
+                  <Share2 size={14} aria-hidden="true" />
+                  {shareStatus === 'shared'
+                    ? 'Shared'
+                    : shareStatus === 'copied'
+                      ? 'Copied'
+                      : 'Share pin'}
+                </button>
+                <button type="button" onClick={clearPin}>Clear</button>
+              </div>
+            </div>
+          )}
           {locationStatus === 'error' && (
             <p className="hunt-3d-location-error">Location is unavailable. Check browser permission and try again.</p>
           )}
         </div>
       </aside>
+
+      {dropPinMode && (
+        <div className="hunt-3d-pin-instruction" role="status">
+          <MapPin size={18} aria-hidden="true" />
+          Click or tap the map to place your pin
+        </div>
+      )}
 
       <div className="hunt-3d-boundary-key">
         <i />

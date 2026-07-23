@@ -799,6 +799,10 @@ a:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .draw-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .library-row {
     grid-template-columns: 90px 1fr;
   }
@@ -822,6 +826,47 @@ a:focus-visible {
 
   .state-grid {
     grid-template-columns: 1fr;
+  }
+
+  .draw-outlook {
+    margin: 28px 0;
+    padding: 18px;
+  }
+
+  .draw-residency summary,
+  .draw-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .draw-residency summary {
+    position: relative;
+    padding-right: 38px;
+  }
+
+  .draw-residency summary::after {
+    position: absolute;
+    top: 20px;
+    right: 18px;
+  }
+
+  .draw-residency summary strong {
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .draw-card-head strong {
+    text-align: left;
+  }
+
+  .draw-metric-grid,
+  .draw-pool-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .static-odds-chart {
+    min-width: 510px;
   }
 
   .page-title,
