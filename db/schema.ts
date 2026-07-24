@@ -113,5 +113,23 @@ export const communitySchema = {
   },
 } as const
 
+export const scoutWorkspaceSchema = {
+  workspaces: {
+    table: 'scout_workspaces',
+    primaryKey: ['id'],
+    unique: [['owner_id', 'state', 'hunt_number']],
+    columns: {
+      id: 'id',
+      ownerId: 'owner_id',
+      state: 'state',
+      huntNumber: 'hunt_number',
+      name: 'name',
+      documentJson: 'document_json',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
+  },
+} as const
+
 export type CommunityCategory = (typeof communityCategories)[number]
 export type CommunityPostType = (typeof communityPostTypes)[number]

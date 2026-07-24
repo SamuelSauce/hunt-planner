@@ -1799,6 +1799,346 @@ textarea {
   font-size: 0.62rem;
 }
 
+.scout-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.11);
+}
+
+.scout-panel button,
+.scout-panel input,
+.scout-panel select,
+.scout-panel textarea {
+  font: inherit;
+}
+
+.scout-panel-heading,
+.scout-panel-heading > span,
+.scout-save-state,
+.scout-auth-row,
+.scout-filters,
+.scout-pin-editor-title,
+.scout-pin-editor-title > span,
+.scout-editor-actions,
+.scout-drop-hint {
+  display: flex;
+  align-items: center;
+}
+
+.scout-panel-heading,
+.scout-auth-row,
+.scout-pin-editor-title {
+  justify-content: space-between;
+}
+
+.scout-panel-heading > span,
+.scout-pin-editor-title > span,
+.scout-save-state {
+  gap: 6px;
+}
+
+.scout-panel-heading strong {
+  color: #fff;
+  font-size: 0.82rem;
+}
+
+.scout-save-state {
+  color: #98b4a2;
+  font-size: 0.61rem;
+}
+
+.scout-save-state.error,
+.scout-auth-error {
+  color: #ffc3ac;
+}
+
+.scout-auth-row {
+  gap: 9px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.scout-auth-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.scout-auth-row strong {
+  color: #e9f2ec;
+  font-size: 0.7rem;
+}
+
+.scout-auth-row small {
+  overflow: hidden;
+  color: #8fa79a;
+  font-size: 0.59rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scout-sign-in,
+.scout-text-button,
+.scout-add-layer,
+.scout-editor-actions button {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  color: #eaf4ed;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.63rem;
+  font-weight: 800;
+}
+
+.scout-sign-in {
+  flex: 0 0 auto;
+  color: #fff2e8;
+  background: rgba(214, 90, 46, 0.24);
+  border-color: rgba(243, 183, 158, 0.32);
+}
+
+.scout-sign-in:disabled,
+.scout-add-layer:disabled,
+.scout-editor-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.scout-filters {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 0.75fr);
+  gap: 6px;
+}
+
+.scout-filters > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #9db3a5;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.scout-panel select,
+.scout-panel input,
+.scout-panel textarea {
+  min-width: 0;
+  box-sizing: border-box;
+  color: #edf5ef;
+  background: rgba(5, 14, 9, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 6px;
+  outline: none;
+}
+
+.scout-panel select,
+.scout-panel input {
+  min-height: 32px;
+  padding: 0 7px;
+  font-size: 0.65rem;
+}
+
+.scout-panel textarea {
+  width: 100%;
+  padding: 7px;
+  resize: vertical;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.scout-panel select:focus,
+.scout-panel input:focus,
+.scout-panel textarea:focus {
+  border-color: rgba(129, 194, 153, 0.76);
+  box-shadow: 0 0 0 2px rgba(83, 149, 107, 0.18);
+}
+
+.scout-layer-list {
+  display: grid;
+  gap: 5px;
+}
+
+.scout-layer-row {
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr) auto 25px;
+  align-items: center;
+  gap: 5px;
+}
+
+.scout-layer-row input {
+  width: 100%;
+  min-height: 29px;
+  background: transparent;
+  border-color: transparent;
+  font-weight: 750;
+}
+
+.scout-layer-row input:not([readonly]):hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.scout-layer-row > small {
+  color: #8fa79a;
+  font-size: 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.scout-layer-visibility,
+.scout-delete-layer,
+.scout-pin-editor-title > button,
+.scout-colors button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  color: #fff;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.scout-layer-visibility {
+  background: color-mix(in srgb, var(--scout-color) 75%, #102219);
+  border: 2px solid var(--scout-color);
+}
+
+.scout-delete-layer {
+  color: #c8d6cc;
+}
+
+.scout-delete-layer:disabled {
+  cursor: not-allowed;
+  opacity: 0.28;
+}
+
+.scout-add-layer {
+  justify-self: start;
+  color: #bcd2c3;
+  background: transparent;
+  border-style: dashed;
+}
+
+.scout-pin-editor {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(3, 11, 7, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.scout-pin-editor-title {
+  color: #ffe1d5;
+  font-size: 0.7rem;
+  font-weight: 850;
+}
+
+.scout-pin-editor-title > button {
+  color: #c9d8ce;
+}
+
+.scout-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.scout-form-grid label,
+.scout-water-field,
+.scout-notes-field {
+  display: grid;
+  gap: 4px;
+  color: #9db3a5;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.scout-colors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scout-colors button:not(.semantic) {
+  width: 21px;
+  height: 21px;
+  background: var(--scout-color);
+  border: 2px solid rgba(255, 255, 255, 0.42);
+  border-radius: 50%;
+}
+
+.scout-colors button.active {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.scout-colors button.semantic {
+  width: auto;
+  padding: 0 7px;
+  color: #c7d8cd;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.scout-editor-actions {
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.scout-editor-actions button.primary {
+  color: #fff;
+  background: #315b45;
+  border-color: #658d75;
+}
+
+.scout-editor-actions button.danger {
+  color: #ffc3ac;
+}
+
+.scout-limit-note,
+.scout-auth-error {
+  margin: 0;
+  font-size: 0.62rem;
+  line-height: 1.35;
+}
+
+.scout-drop-hint {
+  gap: 8px;
+  padding: 8px 9px;
+  color: #f3b79e;
+  background: rgba(214, 90, 46, 0.1);
+  border: 1px solid rgba(243, 183, 158, 0.18);
+  border-radius: 7px;
+}
+
+.scout-drop-hint > span {
+  display: grid;
+}
+
+.scout-drop-hint strong {
+  color: #f7e8e0;
+  font-size: 0.65rem;
+}
+
+.scout-drop-hint small {
+  color: #95aa9d;
+  font-size: 0.58rem;
+}
+
 .hunt-share-pin-popup {
   z-index: 4;
   min-width: 190px;

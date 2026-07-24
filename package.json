@@ -17,6 +17,8 @@
     "content:map-card": "python3 scripts/generate-map-card.py",
     "seo:check": "node scripts/check-static-output.mjs",
     "sites:prepare": "node scripts/prepare-sites-build.mjs",
+    "test:scouting": "node --experimental-strip-types --test test/scouting-model.test.ts worker/scouting.test.js",
+    "test:functions": "npm --prefix functions test",
     "lint": "eslint .",
     "preview": "vite preview"
   },

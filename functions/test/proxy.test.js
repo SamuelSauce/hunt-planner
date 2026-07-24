@@ -20,6 +20,17 @@ test("buildUpstreamUrl preserves the Community path and query", () => {
   );
 });
 
+test("buildUpstreamUrl preserves private maps workspace routes", () => {
+  const url = buildUpstreamUrl(
+    "/api/maps/workspace?state=utah&hunt=DB1001",
+  );
+
+  assert.equal(
+    url.href,
+    `${UPSTREAM}/api/maps/workspace?state=utah&hunt=DB1001`,
+  );
+});
+
 test("buildUpstreamUrl rejects paths outside the Community API", () => {
   assert.equal(buildUpstreamUrl("/api/account"), null);
   assert.equal(buildUpstreamUrl("/api/community-elsewhere"), null);
@@ -149,6 +160,36 @@ test("oversized POST bodies are rejected before fetch", async () => {
   assert.equal(calls, 0);
 });
 
+test("maps workspace payloads have a larger bounded body allowance", async () => {
+  let receivedBytes = 0;
+  const accepted = await proxyCommunityRequest(
+    {
+      method: "POST",
+      originalUrl: "/api/maps/workspace",
+      rawBody: Buffer.alloc(64_000),
+      headers: { "content-type": "application/json" },
+    },
+    {
+      fetchImpl: async (_url, init) => {
+        receivedBytes = init.body.byteLength;
+        return new Response('{"workspace":null}', { status: 200 });
+      },
+    },
+  );
+  const rejected = await proxyCommunityRequest(
+    {
+      method: "POST",
+      originalUrl: "/api/maps/workspace",
+      rawBody: Buffer.alloc(786_433),
+      headers: { "content-type": "application/json" },
+    },
+  );
+
+  assert.equal(accepted.status, 200);
+  assert.equal(receivedBytes, 64_000);
+  assert.equal(rejected.status, 413);
+});
+
 test("unsupported methods and paths are rejected before fetch", async () => {
   let calls = 0;
   const fetchImpl = async () => {
@@ -211,7 +252,7 @@ test("upstream failures return a generic 502 without leaking details", async () 
 
   assert.equal(result.status, 502);
   assert.deepEqual(JSON.parse(result.body), {
-    error: "Community service is temporarily unavailable.",
+    error: "Hunt Planner service is temporarily unavailable.",
   });
   assert.doesNotMatch(result.body.toString(), /private upstream details/);
 });
@@ -234,7 +275,7 @@ test("upstream timeouts return a generic 504", async () => {
 
   assert.equal(result.status, 504);
   assert.deepEqual(JSON.parse(result.body), {
-    error: "Community service timed out.",
+    error: "Hunt Planner service timed out.",
   });
 });
 

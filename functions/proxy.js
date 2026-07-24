@@ -2,7 +2,9 @@ const DEFAULT_UPSTREAM_ORIGIN =
   "https://hunt-planner-seo-preview.samuelfbridge.chatgpt.site";
 const DEFAULT_TIMEOUT_MS = 10_000;
 const COMMUNITY_PATH_PREFIX = "/api/community";
-const MAX_POST_BODY_BYTES = 16_384;
+const MAPS_PATH_PREFIX = "/api/maps";
+const MAX_COMMUNITY_POST_BODY_BYTES = 16_384;
+const MAX_MAPS_POST_BODY_BYTES = 786_432;
 const ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS", "HEAD"]);
 const FORWARDED_REQUEST_HEADERS = [
   ["accept", "Accept"],
@@ -35,7 +37,7 @@ export async function proxyCommunityRequest(
 
   const target = buildUpstreamUrl(request.originalUrl || request.url, upstreamOrigin);
   if (!target) {
-    return jsonProxyResponse(404, "Community API route not found.");
+    return jsonProxyResponse(404, "Planner API route not found.");
   }
 
   if (method === "OPTIONS") {
@@ -47,7 +49,7 @@ export async function proxyCommunityRequest(
   if (
     method === "POST" &&
     request.rawBody &&
-    request.rawBody.byteLength > MAX_POST_BODY_BYTES
+    request.rawBody.byteLength > maxPostBodyBytes(target.pathname)
   ) {
     return jsonProxyResponse(413, "Request body is too large.");
   }
@@ -57,7 +59,6 @@ export async function proxyCommunityRequest(
     () => controller.abort(new DOMException("Upstream request timed out.", "TimeoutError")),
     timeoutMs,
   );
-  timeout.unref?.();
 
   try {
     const upstreamResponse = await fetchImpl(target, {
@@ -84,9 +85,9 @@ export async function proxyCommunityRequest(
     };
   } catch {
     if (controller.signal.aborted) {
-      return jsonProxyResponse(504, "Community service timed out.");
+      return jsonProxyResponse(504, "Hunt Planner service timed out.");
     }
-    return jsonProxyResponse(502, "Community service is temporarily unavailable.");
+    return jsonProxyResponse(502, "Hunt Planner service is temporarily unavailable.");
   } finally {
     clearTimeout(timeout);
   }
@@ -112,8 +113,8 @@ export function buildUpstreamUrl(requestUrl, upstreamOrigin = DEFAULT_UPSTREAM_O
 
   const pathname = incoming.pathname;
   if (
-    pathname !== COMMUNITY_PATH_PREFIX &&
-    !pathname.startsWith(`${COMMUNITY_PATH_PREFIX}/`)
+    !isPathWithinPrefix(pathname, COMMUNITY_PATH_PREFIX) &&
+    !isPathWithinPrefix(pathname, MAPS_PATH_PREFIX)
   ) {
     return null;
   }
@@ -123,6 +124,16 @@ export function buildUpstreamUrl(requestUrl, upstreamOrigin = DEFAULT_UPSTREAM_O
   upstream.search = incoming.search;
   upstream.hash = "";
   return upstream;
+}
+
+function isPathWithinPrefix(pathname, prefix) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+function maxPostBodyBytes(pathname) {
+  return isPathWithinPrefix(pathname, MAPS_PATH_PREFIX)
+    ? MAX_MAPS_POST_BODY_BYTES
+    : MAX_COMMUNITY_POST_BODY_BYTES;
 }
 
 function buildUpstreamHeaders(sourceHeaders = {}) {
