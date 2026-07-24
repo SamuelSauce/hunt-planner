@@ -1,5 +1,19 @@
 const INDEXABLE_EXTENSION = /\.[a-z0-9]+$/i;
 const COMMUNITY_API_PREFIX = "/api/community";
+const FIREBASE_IDENTITY_LOOKUP_URL =
+  "https://identitytoolkit.googleapis.com/v1/accounts:lookup";
+const FIREBASE_WEB_API_KEY = "AIzaSyBpuyQXJ6HIthnLBIyT7tDLqiIaVS070gw";
+const COMMUNITY_ALLOWED_ORIGINS = new Set([
+  "https://huntplanner-66d5e.web.app",
+  "https://huntplanner-66d5e.firebaseapp.com",
+  "https://hunt-planner-seo-preview.samuelfbridge.chatgpt.site",
+]);
+const COMMUNITY_ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS"]);
+const COMMUNITY_ALLOWED_HEADERS = new Set([
+  "accept",
+  "authorization",
+  "content-type",
+]);
 const COMMUNITY_CATEGORIES = new Set([
   "draws",
   "planning",
@@ -367,6 +381,91 @@ function methodNotAllowed(allowed) {
   );
 }
 
+function isAllowedCommunityOrigin(origin) {
+  if (!origin) return true;
+  if (COMMUNITY_ALLOWED_ORIGINS.has(origin)) return true;
+
+  try {
+    const url = new URL(origin);
+    return (
+      url.origin === origin &&
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function communityCorsHeaders(request) {
+  const origin = request.headers.get("origin");
+  if (!origin || !isAllowedCommunityOrigin(origin)) return {};
+
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
+
+function withCommunityCors(response, request) {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(communityCorsHeaders(request))) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function validateCommunityOrigin(request) {
+  const origin = request.headers.get("origin");
+  if (origin && !isAllowedCommunityOrigin(origin)) {
+    throw new HttpError(403, "This origin is not allowed.");
+  }
+}
+
+function handleCommunityPreflight(request) {
+  const origin = request.headers.get("origin");
+  if (!origin || !isAllowedCommunityOrigin(origin)) {
+    return jsonResponse({ error: "This origin is not allowed." }, 403);
+  }
+
+  const requestedMethod = (
+    request.headers.get("access-control-request-method") ?? ""
+  ).toUpperCase();
+  if (
+    !requestedMethod ||
+    !COMMUNITY_ALLOWED_METHODS.has(requestedMethod) ||
+    requestedMethod === "OPTIONS"
+  ) {
+    return jsonResponse({ error: "This method is not allowed." }, 405);
+  }
+
+  const requestedHeaders = (
+    request.headers.get("access-control-request-headers") ?? ""
+  )
+    .split(",")
+    .map((header) => header.trim().toLowerCase())
+    .filter(Boolean);
+  if (
+    requestedHeaders.some(
+      (header) => !COMMUNITY_ALLOWED_HEADERS.has(header),
+    )
+  ) {
+    return jsonResponse({ error: "These request headers are not allowed." }, 403);
+  }
+
+  return new Response(null, {
+    status: 204,
+    headers: communityCorsHeaders(request),
+  });
+}
+
 async function initializeCommunitySchema(db) {
   const statements = COMMUNITY_SCHEMA_STATEMENTS.map((sql) => db.prepare(sql));
   await db.batch(statements);
@@ -532,9 +631,79 @@ function isConfiguredModerator(hash, env) {
 }
 
 async function getAuthenticatedUser(request, env) {
+  const authorization = request.headers.get("authorization");
+  if (authorization) {
+    const match = authorization.match(/^Bearer ([^\s]+)$/i);
+    if (!match || match[1].length > 8192) {
+      throw new HttpError(401, "Your sign-in is invalid. Please sign in again.");
+    }
+    return getFirebaseAuthenticatedUser(match[1], env);
+  }
+
   const rawEmail = request.headers.get("oai-authenticated-user-email");
   if (!rawEmail) return null;
 
+  return communityUserFromEmail(rawEmail, env);
+}
+
+async function getFirebaseAuthenticatedUser(idToken, env) {
+  let response;
+  try {
+    response = await fetch(
+      `${FIREBASE_IDENTITY_LOOKUP_URL}?key=${encodeURIComponent(
+        env?.FIREBASE_WEB_API_KEY || FIREBASE_WEB_API_KEY,
+      )}`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ idToken }),
+      },
+    );
+  } catch {
+    throw new HttpError(
+      503,
+      "Sign-in verification is temporarily unavailable.",
+    );
+  }
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    // A non-JSON response is handled using the status below.
+  }
+
+  if (!response.ok) {
+    if (response.status >= 500 || response.status === 429) {
+      throw new HttpError(
+        503,
+        "Sign-in verification is temporarily unavailable.",
+      );
+    }
+    throw new HttpError(401, "Your sign-in has expired. Please sign in again.");
+  }
+
+  const firebaseUser = Array.isArray(payload?.users) ? payload.users[0] : null;
+  if (
+    !firebaseUser ||
+    typeof firebaseUser.localId !== "string" ||
+    firebaseUser.localId.length === 0 ||
+    firebaseUser.localId.length > 256 ||
+    typeof firebaseUser.email !== "string"
+  ) {
+    throw new HttpError(401, "Your sign-in is invalid. Please sign in again.");
+  }
+  if (firebaseUser.emailVerified === false) {
+    throw new HttpError(403, "Verify your email before joining the community.");
+  }
+
+  return communityUserFromEmail(firebaseUser.email, env);
+}
+
+async function communityUserFromEmail(rawEmail, env) {
   const normalizedEmail = rawEmail.trim().toLowerCase();
   if (
     normalizedEmail.length < 3 ||
@@ -565,7 +734,7 @@ async function getAuthenticatedUser(request, env) {
 async function requireAuthenticatedUser(request, env) {
   const user = await getAuthenticatedUser(request, env);
   if (!user) {
-    throw new HttpError(401, "Sign in with ChatGPT to continue.");
+    throw new HttpError(401, "Sign in to continue.");
   }
   return user;
 }
@@ -1293,20 +1462,32 @@ export default {
       url.pathname === COMMUNITY_API_PREFIX ||
       url.pathname.startsWith(`${COMMUNITY_API_PREFIX}/`)
     ) {
+      if (request.method.toUpperCase() === "OPTIONS") {
+        return withCommunityCors(handleCommunityPreflight(request), request);
+      }
+
       try {
-        return await handleCommunityApi(request, env, url);
+        validateCommunityOrigin(request);
+        const response = await handleCommunityApi(request, env, url);
+        return withCommunityCors(response, request);
       } catch (error) {
         if (error instanceof HttpError) {
-          return jsonResponse(
-            { error: error.message },
-            error.status,
-            error.headers,
+          return withCommunityCors(
+            jsonResponse(
+              { error: error.message },
+              error.status,
+              error.headers,
+            ),
+            request,
           );
         }
         console.error("Community API request failed.", error);
-        return jsonResponse(
-          { error: "Community data is temporarily unavailable." },
-          500,
+        return withCommunityCors(
+          jsonResponse(
+            { error: "Community data is temporarily unavailable." },
+            500,
+          ),
+          request,
         );
       }
     }

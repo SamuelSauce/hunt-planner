@@ -33,5 +33,13 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Hunt Planner",
+        "supportEmail": "samuelfbridge@gmail.com"
+      }
+    }
   }
 }

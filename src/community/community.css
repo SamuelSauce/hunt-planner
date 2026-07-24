@@ -235,6 +235,18 @@
   background: rgba(255, 255, 255, 0.17);
 }
 
+.community-auth-error {
+  margin: 0;
+  padding: 9px 10px;
+  color: #fff4ef;
+  background: rgba(126, 39, 24, 0.38);
+  border: 1px solid rgba(255, 211, 199, 0.34);
+  border-radius: 7px;
+  font-size: 0.75rem;
+  font-weight: 720;
+  line-height: 1.4;
+}
+
 .community-layout,
 .community-thread-layout {
   display: grid;

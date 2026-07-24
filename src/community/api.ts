@@ -1,4 +1,5 @@
 import { previewPosts, previewReplies } from './fixtures'
+import { getFirebaseIdToken } from '../firebase'
 import type {
   CommunityDraft,
   CommunityFilters,
@@ -14,17 +15,19 @@ type ApiResult<T> = {
   isPreview: boolean
 }
 
+const COMMUNITY_API_ORIGIN = 'https://hunt-planner-seo-preview.samuelfbridge.chatgpt.site'
+
 export async function loadCommunityUser(): Promise<CommunityUser | null> {
-  try {
-    const response = await fetch('/api/community/session', {
-      headers: { Accept: 'application/json' },
-    })
-    if (!response.ok) return null
-    const payload = await response.json() as { user: CommunityUser | null }
-    return payload.user
-  } catch {
-    return null
-  }
+  const token = await getFirebaseIdToken()
+  if (!token) return null
+
+  const response = await communityFetch(
+    '/api/community/session',
+    { headers: { Accept: 'application/json' } },
+    true,
+  )
+  const payload = await readMutationResponse<{ user: CommunityUser | null }>(response)
+  return payload.user
 }
 
 export async function loadCommunityPosts(
@@ -38,10 +41,13 @@ export async function loadCommunityPosts(
   params.set('sort', filters.sort)
 
   try {
-    const response = await fetch(`/api/community/posts?${params}`, {
-      headers: { Accept: 'application/json' },
-      signal,
-    })
+    const response = await communityFetch(
+      `/api/community/posts?${params}`,
+      {
+        headers: { Accept: 'application/json' },
+        signal,
+      },
+    )
     if (!response.ok) throw new Error('Community feed is unavailable')
     const payload = await response.json() as { posts: CommunityPost[] }
     return { data: payload.posts, isPreview: false }
@@ -59,10 +65,13 @@ export async function loadCommunityThread(
   signal?: AbortSignal,
 ): Promise<ApiResult<CommunityThread | null>> {
   try {
-    const response = await fetch(`/api/community/posts/${encodeURIComponent(postId)}`, {
-      headers: { Accept: 'application/json' },
-      signal,
-    })
+    const response = await communityFetch(
+      `/api/community/posts/${encodeURIComponent(postId)}`,
+      {
+        headers: { Accept: 'application/json' },
+        signal,
+      },
+    )
     if (response.status === 404) return { data: null, isPreview: false }
     if (!response.ok) throw new Error('Discussion is unavailable')
     const payload = await response.json() as CommunityThread
@@ -78,62 +87,80 @@ export async function loadCommunityThread(
 }
 
 export async function createCommunityPost(draft: CommunityDraft): Promise<CommunityPost> {
-  const response = await fetch('/api/community/posts', {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+  const response = await communityFetch(
+    '/api/community/posts',
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(draft),
     },
-    body: JSON.stringify(draft),
-  })
+    true,
+  )
   return readMutationResponse<{ post: CommunityPost }>(response).then((payload) => payload.post)
 }
 
 export async function createCommunityReply(postId: string, body: string) {
-  const response = await fetch(`/api/community/posts/${encodeURIComponent(postId)}/replies`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+  const response = await communityFetch(
+    `/api/community/posts/${encodeURIComponent(postId)}/replies`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ body }),
     },
-    body: JSON.stringify({ body }),
-  })
+    true,
+  )
   return readMutationResponse(response)
 }
 
 export async function toggleCommunityHelpful(postId: string) {
-  const response = await fetch(`/api/community/posts/${encodeURIComponent(postId)}/vote`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+  const response = await communityFetch(
+    `/api/community/posts/${encodeURIComponent(postId)}/vote`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
     },
-  })
+    true,
+  )
   return readMutationResponse<{ score: number; viewerVote: boolean }>(response)
 }
 
 export async function reportCommunityPost(postId: string, reason: string) {
-  const response = await fetch(`/api/community/posts/${encodeURIComponent(postId)}/report`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
+  const response = await communityFetch(
+    `/api/community/posts/${encodeURIComponent(postId)}/report`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ reason }),
     },
-    body: JSON.stringify({ reason }),
-  })
+    true,
+  )
   return readMutationResponse(response)
 }
 
 export async function loadCommunityModerationReports(): Promise<ModeratorReport[]> {
-  const response = await fetch('/api/community/moderation/reports', {
-    headers: { Accept: 'application/json' },
-  })
+  const response = await communityFetch(
+    '/api/community/moderation/reports',
+    { headers: { Accept: 'application/json' } },
+    true,
+  )
   const payload = await readMutationResponse<{ reports: ModeratorReport[] }>(response)
   return payload.reports
 }
 
 export async function moderateCommunityReport(reportId: string, action: ModeratorAction) {
-  const response = await fetch(
+  const response = await communityFetch(
     `/api/community/moderation/reports/${encodeURIComponent(reportId)}`,
     {
       method: 'POST',
@@ -143,6 +170,7 @@ export async function moderateCommunityReport(reportId: string, action: Moderato
       },
       body: JSON.stringify({ action }),
     },
+    true,
   )
   return readMutationResponse(response)
 }
@@ -159,10 +187,40 @@ async function readMutationResponse<T = Record<string, unknown>>(response: Respo
 }
 
 export class CommunityAuthError extends Error {
-  constructor() {
-    super('Sign in to continue.')
+  constructor(message = 'Sign in to continue.') {
+    super(message)
     this.name = 'CommunityAuthError'
   }
+}
+
+async function communityFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  requireAuth = false,
+) {
+  const apiInput = communityApiInput(input)
+  let token = await getFirebaseIdToken()
+  if (requireAuth && !token) throw new CommunityAuthError()
+
+  let response = await fetch(apiInput, withAuthorization(init, token))
+  if (response.status === 401 && token) {
+    token = await getFirebaseIdToken(true)
+    if (token) response = await fetch(apiInput, withAuthorization(init, token))
+  }
+  return response
+}
+
+function communityApiInput(input: RequestInfo | URL) {
+  if (typeof input === 'string' && input.startsWith('/api/community')) {
+    return `${COMMUNITY_API_ORIGIN}${input}`
+  }
+  return input
+}
+
+function withAuthorization(init: RequestInit, token: string | null): RequestInit {
+  const headers = new Headers(init.headers)
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  return { ...init, headers }
 }
 
 function filterPreviewPosts(filters: CommunityFilters) {

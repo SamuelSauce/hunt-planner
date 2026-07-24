@@ -29,6 +29,12 @@ import {
   reportCommunityPost,
   toggleCommunityHelpful,
 } from './api'
+import {
+  firebaseAuthErrorMessage,
+  signInWithGoogle,
+  signOutOfFirebase,
+  subscribeToFirebaseAuth,
+} from '../firebase'
 import type {
   CommunityCategory,
   CommunityDraft,
@@ -118,6 +124,7 @@ const initialDraft: CommunityDraft = {
 }
 
 const DRAFT_KEY = 'hunt-planner-community-draft'
+const AUTH_INTENT_KEY = 'hunt-planner-community-auth-intent'
 
 export function CommunityBoard() {
   const [filters, setFilters] = useState<CommunityFilters>(() => filtersFromLocation())
@@ -126,6 +133,9 @@ export function CommunityBoard() {
   const [isPreview, setIsPreview] = useState(false)
   const [user, setUser] = useState<CommunityUser | null>(null)
   const [sessionLoaded, setSessionLoaded] = useState(false)
+  const [firebaseSignedIn, setFirebaseSignedIn] = useState(false)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState('')
   const [selectedPostId, setSelectedPostId] = useState<string | null>(() => threadIdFromLocation())
   const [thread, setThread] = useState<CommunityThread | null>(null)
   const [threadLoadSettledId, setThreadLoadSettledId] = useState<string | null>(null)
@@ -144,18 +154,64 @@ export function CommunityBoard() {
   const [moderationError, setModerationError] = useState('')
   const [moderationActionId, setModerationActionId] = useState<string | null>(null)
   const threadLoading = Boolean(selectedPostId && threadLoadSettledId !== selectedPostId)
+  const authPending = authBusy || !sessionLoaded
+  const authPendingLabel = sessionLoaded ? 'Opening sign in…' : 'Checking account…'
 
   useEffect(() => {
     let active = true
-    void loadCommunityUser().then((nextUser) => {
-      if (!active) return
-      setUser(nextUser)
-      setSessionLoaded(true)
-      const params = new URLSearchParams(window.location.search)
-      if (nextUser && params.get('compose') === '1') setComposerOpen(true)
-    })
+    let requestId = 0
+    const unsubscribe = subscribeToFirebaseAuth(
+      (signedIn) => {
+        const currentRequest = ++requestId
+        setFirebaseSignedIn(signedIn)
+        if (signedIn) setAuthError('')
+        if (!signedIn) {
+          setUser(null)
+          setSessionLoaded(true)
+          setAuthBusy(false)
+          return
+        }
+
+        setSessionLoaded(false)
+        void loadCommunityUser()
+          .then((nextUser) => {
+            if (!active || currentRequest !== requestId) return
+            if (!nextUser) {
+              throw new Error('Your community account could not be loaded. Please try again.')
+            }
+            setUser(nextUser)
+            const params = new URLSearchParams(window.location.search)
+            const authIntent = window.sessionStorage.getItem(AUTH_INTENT_KEY)
+            if (authIntent === 'compose' || params.get('compose') === '1') {
+              window.sessionStorage.removeItem(AUTH_INTENT_KEY)
+              setComposerOpen(true)
+            }
+          })
+          .catch((error) => {
+            if (!active || currentRequest !== requestId) return
+            setUser(null)
+            setAuthError(
+              error instanceof Error
+                ? error.message
+                : 'Your community account could not be loaded. Please try again.',
+            )
+          })
+          .finally(() => {
+            if (!active || currentRequest !== requestId) return
+            setSessionLoaded(true)
+            setAuthBusy(false)
+          })
+      },
+      (error) => {
+        if (!active) return
+        setAuthError(firebaseAuthErrorMessage(error))
+        setSessionLoaded(true)
+        setAuthBusy(false)
+      },
+    )
     return () => {
       active = false
+      unsubscribe()
     }
   }, [])
 
@@ -189,7 +245,7 @@ export function CommunityBoard() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [filters, selectedPostId])
+  }, [filters, selectedPostId, user])
 
   useEffect(() => {
     if (!selectedPostId) return
@@ -204,7 +260,7 @@ export function CommunityBoard() {
       .catch(() => undefined)
 
     return () => controller.abort()
-  }, [selectedPostId])
+  }, [selectedPostId, user])
 
   useEffect(() => {
     if (!composerOpen) return
@@ -228,11 +284,39 @@ export function CommunityBoard() {
     [filters.category],
   )
 
+  const requestSignIn = async (intent: 'participate' | 'compose' = 'participate') => {
+    setAuthError('')
+    if (intent === 'compose') {
+      window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+      window.sessionStorage.setItem(AUTH_INTENT_KEY, 'compose')
+    }
+    setAuthBusy(true)
+    try {
+      await signInWithGoogle()
+    } catch (error) {
+      setAuthError(firebaseAuthErrorMessage(error))
+      setAuthBusy(false)
+    }
+  }
+
+  const signOut = async () => {
+    setAuthError('')
+    setAuthBusy(true)
+    try {
+      await signOutOfFirebase()
+      setComposerOpen(false)
+      setModerationOpen(false)
+    } catch {
+      setAuthError('You could not be signed out. Please try again.')
+    } finally {
+      setAuthBusy(false)
+    }
+  }
+
   const openComposer = () => {
     setMutationError('')
     if (!user) {
-      window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-      window.location.assign(signInHref('/community?compose=1'))
+      void requestSignIn('compose')
       return
     }
     setComposerOpen(true)
@@ -292,7 +376,7 @@ export function CommunityBoard() {
   const toggleHelpful = async () => {
     if (!thread) return
     if (!user) {
-      window.location.assign(signInHref(window.location.pathname))
+      void requestSignIn()
       return
     }
     setMutationError('')
@@ -315,7 +399,7 @@ export function CommunityBoard() {
     event.preventDefault()
     if (!thread) return
     if (!user) {
-      window.location.assign(signInHref(window.location.pathname))
+      void requestSignIn()
       return
     }
     setMutationError('')
@@ -405,7 +489,8 @@ export function CommunityBoard() {
 
   const handleMutationError = (error: unknown) => {
     if (error instanceof CommunityAuthError) {
-      window.location.assign(signInHref(window.location.pathname))
+      setMutationError(error.message)
+      setAuthError(error.message)
       return
     }
     setMutationError(error instanceof Error ? error.message : 'That action could not be completed.')
@@ -427,9 +512,14 @@ export function CommunityBoard() {
           </div>
         </div>
         <div className="community-hero-actions">
-          <button className="community-primary-button" type="button" onClick={openComposer}>
+          <button
+            className="community-primary-button"
+            type="button"
+            onClick={openComposer}
+            disabled={authPending}
+          >
             <Plus size={17} aria-hidden="true" />
-            Start a discussion
+            {authPending && !user ? authPendingLabel : 'Start a discussion'}
           </button>
           {sessionLoaded && (
             user ? (
@@ -450,15 +540,36 @@ export function CommunityBoard() {
                       Moderate
                     </button>
                   )}
-                  <a href="/signout-with-chatgpt?return_to=%2Fcommunity">Sign out</a>
+                  <button type="button" onClick={() => void signOut()} disabled={authBusy}>
+                    Sign out
+                  </button>
                 </span>
               </div>
+            ) : firebaseSignedIn ? (
+              <button
+                className="community-secondary-button"
+                type="button"
+                onClick={() => void signOut()}
+                disabled={authBusy}
+              >
+                Sign out and try another account
+              </button>
             ) : (
-              <a className="community-secondary-button" href={signInHref('/community')}>
+              <button
+                className="community-secondary-button"
+                type="button"
+                onClick={() => void requestSignIn()}
+                disabled={authPending}
+              >
                 <User size={16} aria-hidden="true" />
-                Sign in to participate
-              </a>
+                {authPending ? authPendingLabel : 'Sign in with Google'}
+              </button>
             )
+          )}
+          {authError && (
+            <p className="community-auth-error" role="alert">
+              {authError}
+            </p>
           )}
         </div>
       </section>
@@ -485,6 +596,10 @@ export function CommunityBoard() {
           onReportReasonChange={setReportReason}
           onReport={submitReport}
           onShare={shareThread}
+          onSignIn={() => void requestSignIn()}
+          onStart={openComposer}
+          authBusy={authPending}
+          authBusyLabel={authPendingLabel}
         />
       ) : (
         <div className="community-layout">
@@ -600,7 +715,12 @@ export function CommunityBoard() {
             </div>
           </section>
 
-          <CommunitySidebar user={user} onStart={openComposer} />
+          <CommunitySidebar
+            user={user}
+            onStart={openComposer}
+            authBusy={authPending}
+            authBusyLabel={authPendingLabel}
+          />
         </div>
       )}
 
@@ -719,6 +839,10 @@ function ThreadView({
   onReportReasonChange,
   onReport,
   onShare,
+  onSignIn,
+  onStart,
+  authBusy,
+  authBusyLabel,
 }: {
   thread: CommunityThread | null
   loading: boolean
@@ -740,6 +864,10 @@ function ThreadView({
   onReportReasonChange: (value: string) => void
   onReport: (event: React.FormEvent<HTMLFormElement>) => void
   onShare: () => void
+  onSignIn: () => void
+  onStart: () => void
+  authBusy: boolean
+  authBusyLabel: string
 }) {
   if (loading) {
     return (
@@ -931,9 +1059,14 @@ function ThreadView({
               <strong>Join this discussion</strong>
               <small>Reading is public. Sign in to reply or mark a post Helpful.</small>
             </span>
-            <a className="community-primary-button" href={signInHref(window.location.pathname)}>
-              Sign in to reply
-            </a>
+            <button
+              className="community-primary-button"
+              type="button"
+              onClick={onSignIn}
+              disabled={authBusy}
+            >
+              {authBusy ? authBusyLabel : 'Sign in with Google'}
+            </button>
           </div>
         )}
 
@@ -966,9 +1099,12 @@ function ThreadView({
         )}
       </section>
 
-      <CommunitySidebar user={user} onStart={() => {
-        window.location.assign(user ? '/community?compose=1' : signInHref('/community?compose=1'))
-      }} />
+      <CommunitySidebar
+        user={user}
+        onStart={onStart}
+        authBusy={authBusy}
+        authBusyLabel={authBusyLabel}
+      />
     </div>
   )
 }
@@ -976,9 +1112,13 @@ function ThreadView({
 function CommunitySidebar({
   user,
   onStart,
+  authBusy,
+  authBusyLabel,
 }: {
   user: CommunityUser | null
   onStart: () => void
+  authBusy: boolean
+  authBusyLabel: string
 }) {
   return (
     <aside className="community-sidebar">
@@ -1006,8 +1146,17 @@ function CommunitySidebar({
             ? 'Share the planning tradeoffs and field lessons that do not fit in a data table.'
             : 'Every discussion is public to browse. An account is only required to post, reply, react, or report.'}
         </p>
-        <button className="community-secondary-button" type="button" onClick={onStart}>
-          {user ? 'Start a discussion' : 'Sign in to participate'}
+        <button
+          className="community-secondary-button"
+          type="button"
+          onClick={onStart}
+          disabled={authBusy}
+        >
+          {user
+            ? 'Start a discussion'
+            : authBusy
+              ? authBusyLabel
+              : 'Sign in with Google'}
         </button>
       </section>
 
@@ -1409,11 +1558,6 @@ function draftFromStorageOrLocation(): CommunityDraft {
     species: params.get('species') ?? stored.species ?? '',
     huntNumber: params.get('hunt') ?? stored.huntNumber ?? '',
   }
-}
-
-function signInHref(returnTo: string) {
-  const safeReturnTo = returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/community'
-  return `/signin-with-chatgpt?return_to=${encodeURIComponent(safeReturnTo)}`
 }
 
 function plannerHuntHref(post: CommunityPost) {

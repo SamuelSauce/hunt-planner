@@ -1,15 +1,5 @@
-import { initializeApp } from 'firebase/app'
 import { getAnalytics, isSupported, logEvent, type Analytics } from 'firebase/analytics'
-
-const firebaseConfig = {
-  apiKey: 'AIzaSyBpuyQXJ6HIthnLBIyT7tDLqiIaVS070gw',
-  authDomain: 'huntplanner-66d5e.firebaseapp.com',
-  projectId: 'huntplanner-66d5e',
-  storageBucket: 'huntplanner-66d5e.firebasestorage.app',
-  messagingSenderId: '760945604648',
-  appId: '1:760945604648:web:73554ee0708a653bfe1d1d',
-  measurementId: 'G-NC83FX30D5',
-}
+import { getFirebaseApp } from './firebase'
 
 type AnalyticsParams = Record<string, string | number | boolean | null | undefined>
 
@@ -62,8 +52,7 @@ async function resolveAnalytics() {
   if (!shouldTrackAnalytics()) return null
   if (!(await isSupported())) return null
 
-  const app = initializeApp(firebaseConfig)
-  return getAnalytics(app)
+  return getAnalytics(getFirebaseApp())
 }
 
 function shouldTrackAnalytics() {
