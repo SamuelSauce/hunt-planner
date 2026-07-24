@@ -16,10 +16,22 @@ const MIN_STABLE_ODDS_APPLICANTS = 10
 const PROBABLE_CHANCE = 25
 
 const stateConfigs = [
-  { key: 'utah', label: 'Utah', code: 'UT', file: 'udwr-data.json' },
-  { key: 'colorado', label: 'Colorado', code: 'CO', file: 'cpw-data.json' },
-  { key: 'idaho', label: 'Idaho', code: 'ID', file: 'idfg-data.json' },
-  { key: 'wyoming', label: 'Wyoming', code: 'WY', file: 'wgfd-data.json' },
+  { key: 'utah', label: 'Utah', code: 'UT', agency: 'Utah DWR', file: 'udwr-data.json' },
+  {
+    key: 'colorado',
+    label: 'Colorado',
+    code: 'CO',
+    agency: 'Colorado Parks and Wildlife',
+    file: 'cpw-data.json',
+  },
+  { key: 'idaho', label: 'Idaho', code: 'ID', agency: 'Idaho Fish and Game', file: 'idfg-data.json' },
+  {
+    key: 'wyoming',
+    label: 'Wyoming',
+    code: 'WY',
+    agency: 'Wyoming Game and Fish Department',
+    file: 'wgfd-data.json',
+  },
 ]
 
 const escapeHtml = (value = '') =>
@@ -959,7 +971,7 @@ function articlePage(article) {
             </div>
           </header>
           <img class="hero-image" src="${escapeHtml(article.data.heroImage)}" width="1200" height="675" alt="${escapeHtml(article.data.heroAlt)}">
-          <p class="image-caption">Hunt Planner orientation graphic derived from the published Utah DWR hunt boundary. Not for field navigation.</p>
+          <p class="image-caption">Hunt Planner orientation graphic derived from the published ${escapeHtml(article.group.state.agency)} hunt boundary. Not for field navigation.</p>
           ${statCards(article.group)}
           <aside class="action-band">
             <div><strong>Research ${escapeHtml(article.data.huntNumber)} in Hunt Planner</strong><span>Compare the official data, inspect the boundary or open the terrain in 3D.</span></div>
@@ -969,7 +981,7 @@ function articlePage(article) {
             </div>
           </aside>
           <div class="article-body">${renderMarkdown(article.body)}</div>
-          <aside class="notice"><strong>Editorial note:</strong> This article combines official agency records, Hunt Planner calculations and clearly labeled public hunter reports. It was prepared with AI-assisted research and drafting, then checked against the linked sources. See the <a href="/editorial-policy/">editorial and AI policy</a>.</aside>
+          <aside class="notice"><strong>Editorial note:</strong> This article uses official agency records and Hunt Planner calculations. Any public hunter reports are clearly labeled as anecdotal context. It was prepared with AI-assisted research and drafting, then checked against the linked sources. See the <a href="/editorial-policy/">editorial and AI policy</a>.</aside>
         </article>
       </main>`,
   })

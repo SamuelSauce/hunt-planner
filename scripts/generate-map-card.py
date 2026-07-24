@@ -345,12 +345,16 @@ def draw_metric(hunt: dict[str, Any]) -> tuple[str, str]:
         value = f"{years} {year_label}"
         if point_level is not None:
             value += f" / {point_level} pts"
-        return ("EST. RES. P50", value)
+        profile = hunt.get("drawProfile") or {}
+        odds = hunt.get("odds") or {}
+        source_year = profile.get("year") or odds.get("year") or "LATEST"
+        return (f"EST. {source_year} RES. P50", value)
 
     draw_out = hunt.get("drawOut") or {}
     resident = draw_out.get("resident") or {}
     if resident.get("drawnOutAt"):
-        return ("RESIDENT DRAW", str(resident["drawnOutAt"]))
+        source_year = draw_out.get("year") or "LATEST"
+        return (f"{source_year} RESIDENT DRAW", str(resident["drawnOutAt"]))
 
     return ("DRAW HISTORY", "Not available")
 
