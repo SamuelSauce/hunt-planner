@@ -56,6 +56,13 @@ current official sources, clearly labeled anecdotal field reports, and a link
 to a matching Hunt Planner record. Run the content validator before previewing
 or publishing.
 
+Automated journal publications must be prepared on a dated topic branch and
+submitted as a ready-for-review pull request to `main`; they must not be pushed
+directly to `main`. After validation, add the `codex` and `codex-automation`
+labels when available, verify the final diff and required checks, merge the pull
+request, fast-forward the local `main`, rebuild, and deploy that exact
+post-merge output to Firebase Hosting.
+
 Set `SITE_URL` when building for a different canonical host. The Search Console
 verification token is persisted in the application home page and static
 generator. `GOOGLE_SITE_VERIFICATION` can override it for another deployment.
