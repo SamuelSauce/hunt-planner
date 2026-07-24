@@ -1342,12 +1342,16 @@ textarea {
   height: 100%;
 }
 
+.hunt-3d-modal .hunt-3d-map-canvas canvas {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
 .hunt-3d-header,
 .hunt-3d-layers,
 .hunt-3d-boundary-key,
 .hunt-3d-loading,
 .hunt-3d-boundary-warning,
-.hunt-3d-pin-instruction,
 .hunt-3d-safety-note {
   position: absolute;
   z-index: 2;
@@ -1766,93 +1770,162 @@ textarea {
   opacity: 0.55;
 }
 
-.hunt-3d-tools .hunt-3d-pin-tool {
-  grid-column: 1 / -1;
-  color: #ffe6dc;
-  background: rgba(214, 90, 46, 0.17);
-  border-color: rgba(243, 183, 158, 0.28);
-}
-
-.hunt-3d-tools .hunt-3d-pin-tool.active {
-  color: #17231b;
-  background: #f3b79e;
-  border-color: #ffd9c9;
-}
-
-.hunt-3d-pin-panel {
-  display: grid;
+.hunt-3d-pin-hint {
+  display: flex;
+  align-items: center;
   gap: 9px;
-  padding: 10px;
+  padding: 9px 10px;
+  color: #ffe1d5;
   background: rgba(214, 90, 46, 0.13);
   border: 1px solid rgba(243, 183, 158, 0.24);
   border-radius: 8px;
 }
 
-.hunt-3d-pin-panel > div:first-child {
-  display: grid;
-  gap: 3px;
+.hunt-3d-pin-hint > svg {
+  flex: 0 0 auto;
 }
 
-.hunt-3d-pin-panel span {
+.hunt-3d-pin-hint span {
+  display: grid;
+}
+
+.hunt-3d-pin-hint strong {
+  color: #fbe9e1;
+  font-size: 0.7rem;
+}
+
+.hunt-3d-pin-hint small {
+  color: #aebfb4;
+  font-size: 0.62rem;
+}
+
+.hunt-share-pin-popup {
+  z-index: 4;
+  min-width: 190px;
+  max-width: 220px !important;
+}
+
+.hunt-share-pin-popup .maplibregl-popup-content {
+  padding: 0;
+  overflow: hidden;
+  color: #eaf3ed;
+  background: rgba(14, 29, 21, 0.97);
+  border: 1px solid rgba(255, 225, 213, 0.28);
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(14px);
+}
+
+.hunt-share-pin-popup[class*='maplibregl-popup-anchor-bottom'] .maplibregl-popup-tip {
+  border-top-color: rgba(14, 29, 21, 0.97);
+}
+
+.hunt-share-pin-popup[class*='maplibregl-popup-anchor-top'] .maplibregl-popup-tip {
+  border-bottom-color: rgba(14, 29, 21, 0.97);
+}
+
+.hunt-share-pin-popup[class*='maplibregl-popup-anchor-left'] .maplibregl-popup-tip {
+  border-right-color: rgba(14, 29, 21, 0.97);
+}
+
+.hunt-share-pin-popup[class*='maplibregl-popup-anchor-right'] .maplibregl-popup-tip {
+  border-left-color: rgba(14, 29, 21, 0.97);
+}
+
+.hunt-3d-pin-bubble {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+}
+
+.hunt-3d-pin-bubble > div {
+  display: inline-flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 5px;
+}
+
+.hunt-3d-pin-bubble span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   color: #ffe1d5;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 850;
 }
 
-.hunt-3d-pin-panel strong {
+.hunt-3d-pin-bubble small {
   color: #aebfb4;
-  font-size: 0.64rem;
+  font-size: 0.6rem;
   font-variant-numeric: tabular-nums;
 }
 
-.hunt-3d-pin-panel > div:last-child {
+.hunt-3d-pin-bubble > div button {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  color: #b9c9bf;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
 }
 
-.hunt-3d-pin-panel button {
+.hunt-3d-pin-bubble > button {
   display: inline-flex;
   min-height: 34px;
   align-items: center;
   justify-content: center;
   gap: 5px;
   padding: 0 10px;
-  color: #dce9df;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  background: #d65a2e;
+  border: 1px solid #ed8b67;
   border-radius: 6px;
   cursor: pointer;
   font: inherit;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 800;
 }
 
-.hunt-3d-pin-panel button:nth-child(2) {
-  color: #fff;
-  background: #d65a2e;
-  border-color: #ed8b67;
+.hunt-3d-pin-bubble > button.shared {
+  color: #e4ffeb;
+  background: #2f7045;
+  border-color: #63a878;
 }
 
-.hunt-3d-pin-instruction {
-  display: inline-flex;
-  top: 108px;
-  left: 50%;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 13px;
-  color: #fff;
-  background: rgba(14, 29, 21, 0.94);
-  border: 1px solid rgba(243, 183, 158, 0.38);
-  border-radius: 9px;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
-  font-size: 0.73rem;
-  font-weight: 800;
+.hunt-3d-long-press-indicator {
+  position: absolute;
+  z-index: 4;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  background: rgba(214, 90, 46, 0.24);
+  border: 2px solid rgba(255, 239, 232, 0.96);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(214, 90, 46, 0.38);
   pointer-events: none;
-  transform: translateX(-50%);
+  animation: hunt-pin-hold 390ms ease-out forwards;
+}
+
+.hunt-3d-long-press-indicator.placed {
+  opacity: 0;
+  transform: scale(1.3);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+@keyframes hunt-pin-hold {
+  from {
+    background: rgba(214, 90, 46, 0.12);
+    transform: scale(0.68);
+  }
+
+  to {
+    background: rgba(214, 90, 46, 0.4);
+    transform: scale(1);
+  }
 }
 
 .hunt-share-pin-marker::after {
@@ -2314,10 +2387,6 @@ textarea {
   .hunt-3d-boundary-key,
   .hunt-3d-safety-note {
     display: none;
-  }
-
-  .hunt-3d-pin-instruction {
-    top: 96px;
   }
 
   .hunt-3d-modal .maplibregl-ctrl-bottom-right,

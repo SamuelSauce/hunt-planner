@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ChevronDown,
   Crosshair,
@@ -81,6 +82,7 @@ export function Hunt3DMap({
   const mapContainerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const pinMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const pinPopupRef = useRef<maplibregl.Popup | null>(null)
   const pinRef = useRef<MapPinLocation | null>(pin)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   const resetViewRef = useRef<() => void>(() => undefined)
@@ -97,7 +99,7 @@ export function Hunt3DMap({
   const [potentialVisible, setPotentialVisible] = useState(false)
   const [potentialStatus, setPotentialStatus] = useState<PotentialStatus>('idle')
   const [potentialAnalysis, setPotentialAnalysis] = useState<HuntPotentialAnalysis | null>(null)
-  const [dropPinMode, setDropPinMode] = useState(false)
+  const [pinPopupContainer] = useState(() => document.createElement('div'))
   const plannerState = hunt.state ?? 'utah'
   const dataPath = boundaryDataPath(plannerState, hunt.species, hunt.category)
 
@@ -280,6 +282,7 @@ export function Hunt3DMap({
     return () => {
       removeShiftPivotGesture()
       pinMarkerRef.current = null
+      pinPopupRef.current = null
       resetViewRef.current = () => undefined
       mapRef.current = null
       map.remove()
@@ -293,12 +296,19 @@ export function Hunt3DMap({
     if (!pin) {
       pinMarkerRef.current?.remove()
       pinMarkerRef.current = null
+      pinPopupRef.current?.remove()
+      pinPopupRef.current = null
       return
     }
 
     let marker = pinMarkerRef.current
     if (!marker) {
-      marker = new maplibregl.Marker({ color: '#e95727', scale: 1.15 })
+      marker = new maplibregl.Marker({
+        color: '#e95727',
+        opacity: 1,
+        opacityWhenCovered: 1,
+        scale: 1.15,
+      })
       marker.getElement().classList.add('hunt-share-pin-marker')
       marker.getElement().setAttribute('role', 'img')
       pinMarkerRef.current = marker
@@ -312,32 +322,32 @@ export function Hunt3DMap({
         'aria-label',
         `Shared pin at ${pin.latitude.toFixed(5)}, ${pin.longitude.toFixed(5)}`,
       )
-  }, [mapReady, pin])
+
+    let popup = pinPopupRef.current
+    if (!popup) {
+      popup = new maplibregl.Popup({
+        className: 'hunt-share-pin-popup',
+        closeButton: false,
+        closeOnClick: false,
+        offset: 62,
+      })
+        .setDOMContent(pinPopupContainer)
+        .setLngLat([pin.longitude, pin.latitude])
+        .addTo(map)
+      pinPopupRef.current = popup
+    } else {
+      popup.setLngLat([pin.longitude, pin.latitude])
+    }
+  }, [mapReady, pin, pinPopupContainer])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady || !dropPinMode) return
-
-    const canvas = map.getCanvas()
-    const previousCursor = canvas.style.cursor
-    canvas.style.cursor = 'crosshair'
-
-    const handleMapClick = (event: maplibregl.MapMouseEvent) => {
-      const nextPin = normalizeMapPin({
-        longitude: event.lngLat.lng,
-        latitude: event.lngLat.lat,
-      })
+    if (!map || !mapReady) return
+    return installLongPressPinGesture(map, (nextPin) => {
       pinRef.current = nextPin
-      setDropPinMode(false)
       onPinChange(nextPin)
-    }
-
-    map.on('click', handleMapClick)
-    return () => {
-      canvas.style.cursor = previousCursor
-      map.off('click', handleMapClick)
-    }
-  }, [dropPinMode, mapReady, onPinChange])
+    })
+  }, [mapReady, onPinChange])
 
   useEffect(() => {
     const map = mapRef.current
@@ -455,19 +465,8 @@ export function Hunt3DMap({
     })
   }
 
-  const focusPin = () => {
-    if (!pin) return
-    mapRef.current?.flyTo({
-      center: [pin.longitude, pin.latitude],
-      zoom: Math.max(mapRef.current.getZoom(), 14),
-      pitch: terrainVisible ? 68 : 0,
-      duration: 800,
-    })
-  }
-
   const clearPin = () => {
     pinRef.current = null
-    setDropPinMode(false)
     onPinChange(null)
   }
 
@@ -624,17 +623,15 @@ export function Hunt3DMap({
             />
           )}
 
+          <div className="hunt-3d-pin-hint">
+            <MapPin size={17} aria-hidden="true" />
+            <span>
+              <strong>Drop a pin</strong>
+              <small>Press and hold anywhere on the map</small>
+            </span>
+          </div>
+
           <div className="hunt-3d-tools">
-            <button
-              className={`hunt-3d-pin-tool ${dropPinMode ? 'active' : ''}`}
-              type="button"
-              aria-pressed={dropPinMode}
-              onClick={() => setDropPinMode((active) => !active)}
-              disabled={!mapReady}
-            >
-              <MapPin size={16} aria-hidden="true" />
-              {dropPinMode ? 'Cancel pin drop' : pin ? 'Move pin' : 'Drop pin'}
-            </button>
             <button type="button" onClick={() => resetViewRef.current()} disabled={!mapReady}>
               <RotateCcw size={16} aria-hidden="true" />
               Reset view
@@ -646,37 +643,37 @@ export function Hunt3DMap({
               {locationStatus === 'locating' ? 'Locating…' : 'My location'}
             </button>
           </div>
-          {pin && (
-            <div className="hunt-3d-pin-panel" aria-live="polite">
-              <div>
-                <span><MapPin size={15} aria-hidden="true" /> Dropped pin</span>
-                <strong>{pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}</strong>
-              </div>
-              <div>
-                <button type="button" onClick={focusPin}>View</button>
-                <button type="button" onClick={() => onShare(pin)}>
-                  <Share2 size={14} aria-hidden="true" />
-                  {shareStatus === 'shared'
-                    ? 'Shared'
-                    : shareStatus === 'copied'
-                      ? 'Copied'
-                      : 'Share pin'}
-                </button>
-                <button type="button" onClick={clearPin}>Clear</button>
-              </div>
-            </div>
-          )}
           {locationStatus === 'error' && (
             <p className="hunt-3d-location-error">Location is unavailable. Check browser permission and try again.</p>
           )}
         </div>
       </aside>
 
-      {dropPinMode && (
-        <div className="hunt-3d-pin-instruction" role="status">
-          <MapPin size={18} aria-hidden="true" />
-          Click or tap the map to place your pin
-        </div>
+      {pin && createPortal(
+        <div className="hunt-3d-pin-bubble" aria-live="polite">
+          <div>
+            <span><MapPin size={14} aria-hidden="true" /> Dropped pin</span>
+            <button type="button" onClick={clearPin} aria-label="Remove dropped pin">
+              <X size={14} aria-hidden="true" />
+            </button>
+          </div>
+          <small>{pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}</small>
+          <button
+            className={shareStatus === 'copied' || shareStatus === 'shared' ? 'shared' : ''}
+            type="button"
+            onClick={() => onShare(pin)}
+          >
+            <Share2 size={15} aria-hidden="true" />
+            {shareStatus === 'shared'
+              ? 'Shared'
+              : shareStatus === 'copied'
+                ? 'Link copied'
+                : shareStatus === 'error'
+                  ? 'Try sharing again'
+                  : 'Share this pin'}
+          </button>
+        </div>,
+        pinPopupContainer,
       )}
 
       <div className="hunt-3d-boundary-key">
@@ -1073,6 +1070,106 @@ function installShiftPivotGesture(map: MapLibreMap) {
     map.off('mousedown', handleMouseDown)
     document.removeEventListener('mousemove', pivotMap)
     document.removeEventListener('mouseup', stopPivoting)
+  }
+}
+
+function installLongPressPinGesture(
+  map: MapLibreMap,
+  onPlacePin: (pin: MapPinLocation) => void,
+) {
+  const canvas = map.getCanvas()
+  const container = map.getContainer()
+  let activePointerId: number | null = null
+  let startPoint: { x: number; y: number } | null = null
+  let holdTimer: number | undefined
+  let feedbackTimer: number | undefined
+  let feedbackElement: HTMLDivElement | null = null
+
+  const removeFeedback = () => {
+    feedbackElement?.remove()
+    feedbackElement = null
+  }
+
+  const cancelHold = () => {
+    if (holdTimer !== undefined) window.clearTimeout(holdTimer)
+    if (feedbackTimer !== undefined) window.clearTimeout(feedbackTimer)
+    holdTimer = undefined
+    feedbackTimer = undefined
+    activePointerId = null
+    startPoint = null
+    removeFeedback()
+  }
+
+  const showFeedback = () => {
+    if (!startPoint) return
+    feedbackElement = document.createElement('div')
+    feedbackElement.className = 'hunt-3d-long-press-indicator'
+    feedbackElement.style.left = `${startPoint.x}px`
+    feedbackElement.style.top = `${startPoint.y}px`
+    container.appendChild(feedbackElement)
+  }
+
+  const handlePointerDown = (event: PointerEvent) => {
+    if (
+      !event.isPrimary
+      || event.button !== 0
+      || event.shiftKey
+      || event.ctrlKey
+      || event.metaKey
+    ) {
+      return
+    }
+
+    cancelHold()
+    const bounds = container.getBoundingClientRect()
+    activePointerId = event.pointerId
+    startPoint = {
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    }
+    feedbackTimer = window.setTimeout(showFeedback, 110)
+    holdTimer = window.setTimeout(() => {
+      if (!startPoint) return
+      const lngLat = map.unproject([startPoint.x, startPoint.y])
+      const nextPin = normalizeMapPin({
+        longitude: lngLat.lng,
+        latitude: lngLat.lat,
+      })
+
+      holdTimer = undefined
+      feedbackTimer = undefined
+      activePointerId = null
+      startPoint = null
+      feedbackElement?.classList.add('placed')
+      window.setTimeout(removeFeedback, 180)
+      navigator.vibrate?.(12)
+      onPlacePin(nextPin)
+    }, 500)
+  }
+
+  const handlePointerMove = (event: PointerEvent) => {
+    if (event.pointerId !== activePointerId || !startPoint) return
+    const bounds = container.getBoundingClientRect()
+    const deltaX = event.clientX - bounds.left - startPoint.x
+    const deltaY = event.clientY - bounds.top - startPoint.y
+    if (Math.hypot(deltaX, deltaY) > 10) cancelHold()
+  }
+
+  const handlePointerEnd = (event: PointerEvent) => {
+    if (event.pointerId === activePointerId) cancelHold()
+  }
+
+  canvas.addEventListener('pointerdown', handlePointerDown)
+  window.addEventListener('pointermove', handlePointerMove)
+  window.addEventListener('pointerup', handlePointerEnd)
+  window.addEventListener('pointercancel', handlePointerEnd)
+
+  return () => {
+    cancelHold()
+    canvas.removeEventListener('pointerdown', handlePointerDown)
+    window.removeEventListener('pointermove', handlePointerMove)
+    window.removeEventListener('pointerup', handlePointerEnd)
+    window.removeEventListener('pointercancel', handlePointerEnd)
   }
 }
 
