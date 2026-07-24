@@ -50,6 +50,7 @@ export function ScoutingPanel({
   onDeletePin,
   onOpenEditor,
   onCloseEditor,
+  onShareLayers,
   onSharePin,
   onSignIn,
   onSignOut,
@@ -71,6 +72,7 @@ export function ScoutingPanel({
   onDeletePin: (pinId: string) => void
   onOpenEditor: () => void
   onCloseEditor: () => void
+  onShareLayers: () => void
   onSharePin: (location: MapPinLocation) => void
   onSignIn: () => void
   onSignOut: () => void
@@ -138,10 +140,21 @@ export function ScoutingPanel({
             <Layers3 size={17} aria-hidden="true" />
             <strong>Scout layers</strong>
           </span>
-          <ScoutSaveState
-            authStatus={authStatus}
-            persistenceStatus={persistenceStatus}
-          />
+          <div className="scout-panel-heading-actions">
+            <ScoutSaveState
+              authStatus={authStatus}
+              persistenceStatus={persistenceStatus}
+            />
+            <button
+              className="scout-share-layers-button"
+              type="button"
+              onClick={onShareLayers}
+              disabled={workspace.pins.length === 0}
+            >
+              <Share2 size={13} aria-hidden="true" />
+              Share
+            </button>
+          </div>
         </div>
 
         <div className="scout-auth-row">

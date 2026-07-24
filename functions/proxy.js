@@ -16,6 +16,7 @@ const FORWARDED_RESPONSE_HEADERS = new Set([
   "content-language",
   "content-type",
   "retry-after",
+  "x-robots-tag",
 ]);
 
 export async function proxyCommunityRequest(

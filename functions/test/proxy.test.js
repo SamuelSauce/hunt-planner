@@ -224,6 +224,7 @@ test("only safe upstream response headers are returned and caching is disabled",
             "Content-Language": "en",
             "Content-Type": "text/plain",
             "Retry-After": "30",
+            "X-Robots-Tag": "noindex, nofollow, noarchive",
             "Set-Cookie": "secret=never",
             "X-Upstream-Secret": "never",
           },
@@ -236,6 +237,10 @@ test("only safe upstream response headers are returned and caching is disabled",
   assert.equal(result.headers["content-language"], "en");
   assert.equal(result.headers["content-type"], "text/plain");
   assert.equal(result.headers["retry-after"], "30");
+  assert.equal(
+    result.headers["x-robots-tag"],
+    "noindex, nofollow, noarchive",
+  );
   assert.equal(result.headers["set-cookie"], undefined);
   assert.equal(result.headers["x-upstream-secret"], undefined);
 });

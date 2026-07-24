@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import worker, { validateScoutWorkspace } from "./index.js";
+import worker, {
+  buildScoutShareDocument,
+  validateScoutWorkspace,
+} from "./index.js";
 
 function workspace(overrides = {}) {
   const now = 1_785_000_000_000;
@@ -82,6 +85,131 @@ test("enforces the signed-in workspace pin ceiling", () => {
     () => validateScoutWorkspace(source),
     /up to 1,000 pins/,
   );
+});
+
+test("builds a selected-layer snapshot without private notes by default", () => {
+  const source = workspace();
+  source.layers.push({
+    ...source.layers[0],
+    id: "layer_glassing",
+    name: "Glassing",
+    sortOrder: 1,
+  });
+  source.pins.push({
+    ...source.pins[0],
+    id: "pin_glassing_1",
+    layerId: "layer_glassing",
+    title: "North knob",
+    notes: "Private access detail",
+  });
+
+  const result = buildScoutShareDocument(
+    source,
+    {
+      title: "Opening weekend",
+      layerIds: ["layer_glassing"],
+      includeNotes: false,
+    },
+    1_785_000_100_000,
+  );
+
+  assert.equal(result.title, "Opening weekend");
+  assert.deepEqual(result.workspace.layers.map((layer) => layer.id), [
+    "layer_glassing",
+  ]);
+  assert.deepEqual(result.workspace.pins.map((pin) => pin.id), [
+    "pin_glassing_1",
+  ]);
+  assert.equal(result.workspace.pins[0].notes, "");
+});
+
+test("includes notes only when the publisher opts in", () => {
+  const result = buildScoutShareDocument(
+    workspace(),
+    {
+      title: "Water checks",
+      layerIds: ["layer_scratch"],
+      includeNotes: true,
+    },
+    1_785_000_100_000,
+  );
+
+  assert.equal(result.workspace.pins[0].notes, "Flowing in July");
+});
+
+test("rejects empty or foreign layer selections for shared maps", () => {
+  assert.throws(
+    () => buildScoutShareDocument(
+      workspace(),
+      { title: "Bad share", layerIds: ["layer_missing"] },
+    ),
+    /does not belong/,
+  );
+
+  const emptyLayerWorkspace = workspace({
+    pins: [],
+  });
+  assert.throws(
+    () => buildScoutShareDocument(
+      emptyLayerWorkspace,
+      { title: "Empty share", layerIds: ["layer_scratch"] },
+    ),
+    /contains a pin/,
+  );
+});
+
+test("allows anonymous read-only access to an unlisted scout map", async () => {
+  const document = buildScoutShareDocument(
+    workspace(),
+    {
+      title: "Water checks",
+      layerIds: ["layer_scratch"],
+      includeNotes: false,
+    },
+    1_785_000_100_000,
+  );
+  const db = {
+    prepare(sql) {
+      return {
+        bind() {
+          return {
+            async first() {
+              if (sql.includes("FROM scout_shares")) {
+                return {
+                  title: document.title,
+                  document_json: JSON.stringify(document),
+                  created_at: document.createdAt,
+                };
+              }
+              return null;
+            },
+            async run() {
+              return { meta: { changes: 0 } };
+            },
+          };
+        },
+      };
+    },
+    async batch() {
+      return [];
+    },
+  };
+
+  const response = await worker.fetch(
+    new Request(
+      "https://hunt-planner-seo-preview.samuelfbridge.chatgpt.site/api/maps/shares/map_public123",
+    ),
+    {
+      DB: db,
+      ASSETS: { fetch() { return new Response(null, { status: 404 }); } },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("X-Robots-Tag"), "noindex, nofollow, noarchive");
+  const payload = await response.json();
+  assert.equal(payload.share.title, "Water checks");
+  assert.equal(payload.share.workspace.pins[0].notes, "");
 });
 
 test("requires authentication before reading a scout workspace", async () => {

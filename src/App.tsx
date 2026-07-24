@@ -29,6 +29,11 @@ import './App.css'
 const Hunt3DMap = lazy(() =>
   import('./Hunt3DMap').then((module) => ({ default: module.Hunt3DMap })),
 )
+const SharedScoutMapPage = lazy(() =>
+  import('./scouting/SharedScoutMapPage').then((module) => ({
+    default: module.SharedScoutMapPage,
+  })),
+)
 
 type PlannerState = 'utah' | 'colorado' | 'idaho' | 'wyoming'
 type Residency = 'resident' | 'nonresident'
@@ -303,6 +308,18 @@ const sortOptions: Array<{ value: SortMode; label: string }> = [
 ]
 
 function App() {
+  const sharedMapId = getSharedScoutMapId()
+  if (sharedMapId) {
+    return (
+      <Suspense fallback={<main className="shared-scout-state">Opening shared scout map…</main>}>
+        <SharedScoutMapPage shareId={sharedMapId} />
+      </Suspense>
+    )
+  }
+  return <PlannerApp />
+}
+
+function PlannerApp() {
   const [initialShare] = useState(() => getInitialShareState())
   const [view, setView] = useState<AppView>(() => getInitialView())
   const [plannerState, setPlannerState] = useState<PlannerState>(initialShare.state)
@@ -2031,6 +2048,12 @@ function getInitialView(): AppView {
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/'
   if (pathname === '/community' || pathname.startsWith('/community/')) return 'community'
   return pathname === '/contact' ? 'contact' : 'planner'
+}
+
+function getSharedScoutMapId() {
+  if (typeof window === 'undefined') return null
+  const match = window.location.pathname.match(/^\/scout-map\/([A-Za-z0-9_-]{8,80})\/?$/)
+  return match?.[1] ?? null
 }
 
 function getInitialShareState() {

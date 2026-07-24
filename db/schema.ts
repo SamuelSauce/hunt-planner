@@ -129,6 +129,21 @@ export const scoutWorkspaceSchema = {
       updatedAt: 'updated_at',
     },
   },
+  shares: {
+    table: 'scout_shares',
+    primaryKey: ['id'],
+    columns: {
+      id: 'id',
+      ownerId: 'owner_id',
+      title: 'title',
+      state: 'state',
+      huntNumber: 'hunt_number',
+      documentJson: 'document_json',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+      revokedAt: 'revoked_at',
+    },
+  },
 } as const
 
 export type CommunityCategory = (typeof communityCategories)[number]

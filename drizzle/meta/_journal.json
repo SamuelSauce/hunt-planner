@@ -15,6 +15,13 @@
       "when": 1784908800000,
       "tag": "0001_scout_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784995200000,
+      "tag": "0002_scout_shares",
+      "breakpoints": true
     }
   ]
 }

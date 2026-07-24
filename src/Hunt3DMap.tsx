@@ -47,6 +47,7 @@ import {
   ScoutingPanel,
   type ScoutPersistenceStatus,
 } from './scouting/ScoutingPanel'
+import { ScoutShareModal } from './scouting/ScoutShareModal'
 import { loadScoutWorkspace, saveScoutWorkspace } from './scouting/api'
 import {
   clearGuestScoutDraft,
@@ -150,6 +151,7 @@ export function Hunt3DMap({
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
   const [pinEditorOpen, setPinEditorOpen] = useState(false)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
   const lastPersistedWorkspaceRef = useRef('')
   const dataPath = boundaryDataPath(plannerState, hunt.species, hunt.category)
   const selectedPin = workspace.pins.find((candidate) => candidate.id === selectedPinId) ?? null
@@ -263,6 +265,10 @@ export function Hunt3DMap({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      if (shareModalOpen) {
+        setShareModalOpen(false)
+        return
+      }
       if (pinEditorOpen) {
         setPinEditorOpen(false)
         window.requestAnimationFrame(() => savePinButtonRef.current?.focus())
@@ -272,7 +278,7 @@ export function Hunt3DMap({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onClose, pinEditorOpen])
+  }, [onClose, pinEditorOpen, shareModalOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -942,6 +948,10 @@ export function Hunt3DMap({
             onDeletePin={handleDeletePin}
             onOpenEditor={() => setPinEditorOpen(true)}
             onCloseEditor={closePinEditor}
+            onShareLayers={() => {
+              setPinEditorOpen(false)
+              setShareModalOpen(true)
+            }}
             onSharePin={onShare}
             onSignIn={handleSignIn}
             onSignOut={handleSignOut}
@@ -965,6 +975,15 @@ export function Hunt3DMap({
           )}
         </div>
       </aside>
+
+      <ScoutShareModal
+        key={shareModalOpen ? `open-${workspace.updatedAt}` : 'closed'}
+        open={shareModalOpen}
+        workspace={workspace}
+        authStatus={authStatus}
+        onClose={() => setShareModalOpen(false)}
+        onSignIn={handleSignIn}
+      />
 
       {pin && createPortal(
         <div className="hunt-3d-pin-bubble" aria-live="polite">

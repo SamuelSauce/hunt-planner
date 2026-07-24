@@ -34,6 +34,7 @@ const COMMUNITY_POST_TYPES = new Set([
 const COMMUNITY_SORTS = new Set(["active", "new", "top", "unanswered"]);
 const MAX_JSON_BYTES = 16_384;
 const MAX_MAP_JSON_BYTES = 786_432;
+const MAX_SCOUT_SHARES_PER_USER = 50;
 const SCOUT_PIN_TYPES = new Set([
   "water",
   "bedding",
@@ -134,6 +135,19 @@ const COMMUNITY_SCHEMA_STATEMENTS = [
   )`,
   `CREATE INDEX IF NOT EXISTS scout_workspaces_owner_updated_idx
     ON scout_workspaces (owner_id, updated_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS scout_shares (
+    id TEXT PRIMARY KEY NOT NULL,
+    owner_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    state TEXT NOT NULL,
+    hunt_number TEXT NOT NULL,
+    document_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    revoked_at INTEGER
+  )`,
+  `CREATE INDEX IF NOT EXISTS scout_shares_owner_updated_idx
+    ON scout_shares (owner_id, updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS community_posts_activity_idx
     ON community_posts (is_pinned DESC, last_activity_at DESC)`,
   `CREATE INDEX IF NOT EXISTS community_posts_category_idx
@@ -764,6 +778,86 @@ export function validateScoutWorkspace(value) {
     layers,
     pins,
     updatedAt: validateScoutTimestamp(value.updatedAt, "Workspace updated time"),
+  };
+}
+
+export function buildScoutShareDocument(
+  workspaceValue,
+  {
+    title,
+    layerIds,
+    includeNotes = false,
+  },
+  now = Date.now(),
+) {
+  const workspace = validateScoutWorkspace(workspaceValue);
+  const normalizedTitle = normalizePlainText(title, "Shared map title", {
+    min: 1,
+    max: 100,
+  });
+  if (!Array.isArray(layerIds) || layerIds.length < 1 || layerIds.length > 50) {
+    throw new HttpError(400, "Choose between 1 and 50 layers to share.");
+  }
+  if (typeof includeNotes !== "boolean") {
+    throw new HttpError(400, "The notes sharing choice is invalid.");
+  }
+
+  const selectedLayerIds = new Set(
+    layerIds.map((layerId) => validateScoutId(layerId, "Layer ID")),
+  );
+  if (selectedLayerIds.size !== layerIds.length) {
+    throw new HttpError(400, "Shared layers must be unique.");
+  }
+
+  const layers = workspace.layers
+    .filter((layer) => selectedLayerIds.has(layer.id))
+    .map((layer, sortOrder) => ({
+      ...layer,
+      visible: true,
+      sortOrder,
+    }));
+  if (layers.length !== selectedLayerIds.size) {
+    throw new HttpError(400, "A selected layer does not belong to this map.");
+  }
+
+  const pins = workspace.pins
+    .filter((pin) => selectedLayerIds.has(pin.layerId))
+    .map((pin) => ({
+      ...pin,
+      notes: includeNotes ? pin.notes : "",
+    }));
+  if (pins.length === 0) {
+    throw new HttpError(400, "Choose at least one layer that contains a pin.");
+  }
+
+  return {
+    version: 1,
+    title: normalizedTitle,
+    workspace: {
+      ...workspace,
+      layers,
+      pins,
+      updatedAt: now,
+    },
+    createdAt: now,
+  };
+}
+
+function validateScoutShareDocument(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(500, "This shared scout map could not be loaded.");
+  }
+  if (value.version !== 1) {
+    throw new HttpError(500, "This shared scout map could not be loaded.");
+  }
+  return {
+    version: 1,
+    title: normalizePlainText(value.title, "Shared map title", {
+      min: 1,
+      max: 100,
+    }),
+    workspace: validateScoutWorkspace(value.workspace),
+    createdAt: validateScoutTimestamp(value.createdAt, "Shared map created time"),
   };
 }
 
@@ -1614,70 +1708,175 @@ async function moderateReport(request, db, moderator, reportId) {
 async function handleMapsApi(request, env, url) {
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
   const method = request.method.toUpperCase();
-  if (pathname !== `${MAPS_API_PREFIX}/workspace`) {
+  const isWorkspaceRoute = pathname === `${MAPS_API_PREFIX}/workspace`;
+  const isShareCollectionRoute = pathname === `${MAPS_API_PREFIX}/shares`;
+  const shareRoute = pathname.match(
+    new RegExp(`^${MAPS_API_PREFIX}/shares/([A-Za-z0-9_-]{8,80})$`),
+  );
+
+  let user = null;
+  if (isWorkspaceRoute) {
+    if (method !== "GET" && method !== "POST") {
+      return methodNotAllowed(["GET", "POST"]);
+    }
+    user = await requireAuthenticatedUser(request, env);
+  } else if (isShareCollectionRoute) {
+    if (method !== "POST") return methodNotAllowed(["POST"]);
+    user = await requireAuthenticatedUser(request, env);
+  } else if (shareRoute) {
+    if (method !== "GET") return methodNotAllowed(["GET"]);
+  } else {
     throw new HttpError(404, "Maps API route not found.");
   }
-  if (method !== "GET" && method !== "POST") {
-    return methodNotAllowed(["GET", "POST"]);
-  }
+
   if (!env.DB || typeof env.DB.prepare !== "function") {
     throw new HttpError(503, "Scout layers are temporarily unavailable.");
   }
-
-  const user = await requireAuthenticatedUser(request, env);
   const db = env.DB;
   await ensureCommunitySchema(db);
 
-  if (method === "GET") {
-    const state = validateScoutState(url.searchParams.get("state"));
-    const huntNumber = validateScoutHuntNumber(url.searchParams.get("hunt"));
-    const row = await db
-      .prepare(
-        `SELECT document_json
-         FROM scout_workspaces
-         WHERE owner_id = ? AND state = ? AND hunt_number = ?
-         LIMIT 1`,
-      )
-      .bind(user.id, state, huntNumber)
-      .first();
-    if (!row) return jsonResponse({ workspace: null });
+  if (isWorkspaceRoute) {
+    if (method === "GET") {
+      const state = validateScoutState(url.searchParams.get("state"));
+      const huntNumber = validateScoutHuntNumber(url.searchParams.get("hunt"));
+      const row = await db
+        .prepare(
+          `SELECT document_json
+           FROM scout_workspaces
+           WHERE owner_id = ? AND state = ? AND hunt_number = ?
+           LIMIT 1`,
+        )
+        .bind(user.id, state, huntNumber)
+        .first();
+      if (!row) return jsonResponse({ workspace: null });
 
-    let workspace;
-    try {
-      workspace = validateScoutWorkspace(JSON.parse(row.document_json));
-    } catch {
-      throw new HttpError(500, "This scout workspace could not be loaded.");
+      let workspace;
+      try {
+        workspace = validateScoutWorkspace(JSON.parse(row.document_json));
+      } catch {
+        throw new HttpError(500, "This scout workspace could not be loaded.");
+      }
+      return jsonResponse({ workspace });
     }
+
+    const payload = await readJsonObject(request, MAX_MAP_JSON_BYTES);
+    const workspace = validateScoutWorkspace(payload.workspace);
+    const now = Date.now();
+    const documentJson = JSON.stringify(workspace);
+    const workspaceId = `workspace_${crypto.randomUUID()}`;
+    await db
+      .prepare(
+        `INSERT INTO scout_workspaces
+          (id, owner_id, state, hunt_number, name, document_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(owner_id, state, hunt_number) DO UPDATE SET
+           name = excluded.name,
+           document_json = excluded.document_json,
+           updated_at = excluded.updated_at`,
+      )
+      .bind(
+        workspaceId,
+        user.id,
+        workspace.state,
+        workspace.huntNumber,
+        workspace.name,
+        documentJson,
+        now,
+        now,
+      )
+      .run();
     return jsonResponse({ workspace });
   }
 
-  const payload = await readJsonObject(request, MAX_MAP_JSON_BYTES);
-  const workspace = validateScoutWorkspace(payload.workspace);
-  const now = Date.now();
-  const documentJson = JSON.stringify(workspace);
-  const workspaceId = `workspace_${crypto.randomUUID()}`;
-  await db
-    .prepare(
-      `INSERT INTO scout_workspaces
-        (id, owner_id, state, hunt_number, name, document_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(owner_id, state, hunt_number) DO UPDATE SET
-         name = excluded.name,
-         document_json = excluded.document_json,
-         updated_at = excluded.updated_at`,
-    )
-    .bind(
-      workspaceId,
-      user.id,
-      workspace.state,
-      workspace.huntNumber,
-      workspace.name,
-      documentJson,
-      now,
-      now,
-    )
-    .run();
-  return jsonResponse({ workspace });
+  if (isShareCollectionRoute) {
+    const payload = await readJsonObject(request, MAX_MAP_JSON_BYTES);
+    const document = buildScoutShareDocument(
+      payload.workspace,
+      {
+        title: payload.title,
+        layerIds: payload.layerIds,
+        includeNotes: payload.includeNotes,
+      },
+    );
+    const existing = await db
+      .prepare(
+        `SELECT COUNT(*) AS share_count
+         FROM scout_shares
+         WHERE owner_id = ? AND revoked_at IS NULL`,
+      )
+      .bind(user.id)
+      .first();
+    if (Number(existing?.share_count ?? 0) >= MAX_SCOUT_SHARES_PER_USER) {
+      throw new HttpError(
+        409,
+        "You have reached the shared map limit.",
+      );
+    }
+
+    const shareId = `map_${crypto.randomUUID().replaceAll("-", "")}`;
+    const documentJson = JSON.stringify(document);
+    await db
+      .prepare(
+        `INSERT INTO scout_shares
+          (id, owner_id, title, state, hunt_number, document_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        shareId,
+        user.id,
+        document.title,
+        document.workspace.state,
+        document.workspace.huntNumber,
+        documentJson,
+        document.createdAt,
+        document.createdAt,
+      )
+      .run();
+    return jsonResponse(
+      {
+        share: {
+          id: shareId,
+          title: document.title,
+          layerCount: document.workspace.layers.length,
+          pinCount: document.workspace.pins.length,
+          createdAt: document.createdAt,
+        },
+      },
+      201,
+    );
+  }
+
+  if (shareRoute) {
+    const row = await db
+      .prepare(
+        `SELECT title, document_json, created_at
+         FROM scout_shares
+         WHERE id = ? AND revoked_at IS NULL
+         LIMIT 1`,
+      )
+      .bind(shareRoute[1])
+      .first();
+    if (!row) throw new HttpError(404, "This shared scout map is unavailable.");
+
+    let document;
+    try {
+      document = validateScoutShareDocument(JSON.parse(row.document_json));
+    } catch {
+      throw new HttpError(500, "This shared scout map could not be loaded.");
+    }
+    return jsonResponse(
+      {
+        share: {
+          id: shareRoute[1],
+          ...document,
+        },
+      },
+      200,
+      { "X-Robots-Tag": "noindex, nofollow, noarchive" },
+    );
+  }
+
+  throw new HttpError(404, "Maps API route not found.");
 }
 
 async function handleCommunityApi(request, env, url) {
@@ -1811,6 +2010,14 @@ export default {
       if (response.status !== 404) return response;
     }
 
-    return fetchAsset(request, env, "/index.html");
+    const fallback = await fetchAsset(request, env, "/index.html");
+    if (!url.pathname.startsWith("/scout-map/")) return fallback;
+    const headers = new Headers(fallback.headers);
+    headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+    return new Response(fallback.body, {
+      status: fallback.status,
+      statusText: fallback.statusText,
+      headers,
+    });
   },
 };

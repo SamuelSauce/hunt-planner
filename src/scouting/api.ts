@@ -1,6 +1,22 @@
 import { getFirebaseIdToken } from '../firebase'
 import type { ScoutWorkspace } from './model'
 
+export type ScoutShare = {
+  id: string
+  version: 1
+  title: string
+  workspace: ScoutWorkspace
+  createdAt: number
+}
+
+export type ScoutShareReceipt = {
+  id: string
+  title: string
+  layerCount: number
+  pinCount: number
+  createdAt: number
+}
+
 export class ScoutAuthError extends Error {
   constructor() {
     super('Sign in to sync scout layers.')
@@ -26,6 +42,43 @@ export async function saveScoutWorkspace(workspace: ScoutWorkspace) {
   })
   const payload = await readResponse<{ workspace: ScoutWorkspace }>(response)
   return payload.workspace
+}
+
+export async function createScoutShare(
+  workspace: ScoutWorkspace,
+  {
+    title,
+    layerIds,
+    includeNotes,
+  }: {
+    title: string
+    layerIds: string[]
+    includeNotes: boolean
+  },
+) {
+  const response = await scoutFetch('/api/maps/shares', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      workspace,
+      title,
+      layerIds,
+      includeNotes,
+    }),
+  })
+  const payload = await readResponse<{ share: ScoutShareReceipt }>(response)
+  return payload.share
+}
+
+export async function loadScoutShare(shareId: string) {
+  const response = await fetch(`/api/maps/shares/${encodeURIComponent(shareId)}`, {
+    headers: { Accept: 'application/json' },
+  })
+  const payload = await readResponse<{ share: ScoutShare }>(response)
+  return payload.share
 }
 
 async function scoutFetch(input: RequestInfo | URL, init: RequestInit = {}) {
