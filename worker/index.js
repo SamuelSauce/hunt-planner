@@ -13,6 +13,7 @@ const COMMUNITY_ALLOWED_HEADERS = new Set([
   "accept",
   "authorization",
   "content-type",
+  "x-firebase-id-token",
 ]);
 const COMMUNITY_CATEGORIES = new Set([
   "draws",
@@ -404,7 +405,8 @@ function communityCorsHeaders(request) {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+    "Access-Control-Allow-Headers":
+      "X-Firebase-ID-Token, Authorization, Content-Type, Accept",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
@@ -631,19 +633,52 @@ function isConfiguredModerator(hash, env) {
 }
 
 async function getAuthenticatedUser(request, env) {
+  const hasFirebaseToken = request.headers.has("x-firebase-id-token");
+  const hasAuthorization = request.headers.has("authorization");
+  const hasSiwcEmail = request.headers.has("oai-authenticated-user-email");
+  const mechanismCount = [
+    hasFirebaseToken,
+    hasAuthorization,
+    hasSiwcEmail,
+  ].filter(Boolean).length;
+
+  if (mechanismCount > 1) {
+    throw new HttpError(401, "Your sign-in is invalid. Please sign in again.");
+  }
+
+  if (hasFirebaseToken) {
+    const idToken = request.headers.get("x-firebase-id-token") ?? "";
+    if (!isValidFirebaseTokenHeader(idToken)) {
+      throw new HttpError(401, "Your sign-in is invalid. Please sign in again.");
+    }
+    return getFirebaseAuthenticatedUser(idToken, env);
+  }
+
   const authorization = request.headers.get("authorization");
-  if (authorization) {
+  if (hasAuthorization) {
     const match = authorization.match(/^Bearer ([^\s]+)$/i);
-    if (!match || match[1].length > 8192) {
+    if (!match || !isValidFirebaseTokenHeader(match[1])) {
       throw new HttpError(401, "Your sign-in is invalid. Please sign in again.");
     }
     return getFirebaseAuthenticatedUser(match[1], env);
   }
 
   const rawEmail = request.headers.get("oai-authenticated-user-email");
-  if (!rawEmail) return null;
+  if (!hasSiwcEmail) return null;
+  if (!rawEmail || rawEmail.includes(",")) {
+    throw new HttpError(401, "Your sign-in is invalid. Please sign in again.");
+  }
 
   return communityUserFromEmail(rawEmail, env);
+}
+
+function isValidFirebaseTokenHeader(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 8192 &&
+    !/[\s,]/u.test(value)
+  );
 }
 
 async function getFirebaseAuthenticatedUser(idToken, env) {

@@ -15,8 +15,6 @@ type ApiResult<T> = {
   isPreview: boolean
 }
 
-const COMMUNITY_API_ORIGIN = 'https://hunt-planner-seo-preview.samuelfbridge.chatgpt.site'
-
 export async function loadCommunityUser(): Promise<CommunityUser | null> {
   const token = await getFirebaseIdToken()
   if (!token) return null
@@ -198,28 +196,22 @@ async function communityFetch(
   init: RequestInit = {},
   requireAuth = false,
 ) {
-  const apiInput = communityApiInput(input)
   let token = await getFirebaseIdToken()
   if (requireAuth && !token) throw new CommunityAuthError()
 
-  let response = await fetch(apiInput, withAuthorization(init, token))
+  let response = await fetch(input, withFirebaseIdentity(init, token))
   if (response.status === 401 && token) {
     token = await getFirebaseIdToken(true)
-    if (token) response = await fetch(apiInput, withAuthorization(init, token))
+    if (token) response = await fetch(input, withFirebaseIdentity(init, token))
   }
   return response
 }
 
-function communityApiInput(input: RequestInfo | URL) {
-  if (typeof input === 'string' && input.startsWith('/api/community')) {
-    return `${COMMUNITY_API_ORIGIN}${input}`
-  }
-  return input
-}
-
-function withAuthorization(init: RequestInit, token: string | null): RequestInit {
+function withFirebaseIdentity(init: RequestInit, token: string | null): RequestInit {
   const headers = new Headers(init.headers)
-  if (token) headers.set('Authorization', `Bearer ${token}`)
+  headers.delete('Authorization')
+  headers.delete('X-Firebase-ID-Token')
+  if (token) headers.set('X-Firebase-ID-Token', token)
   return { ...init, headers }
 }
 

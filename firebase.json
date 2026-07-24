@@ -1,4 +1,17 @@
 {
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ],
   "hosting": {
     "site": "huntplanner-66d5e",
     "public": "dist/client",
@@ -28,6 +41,14 @@
       }
     ],
     "rewrites": [
+      {
+        "source": "/api/community{,/**}",
+        "function": {
+          "functionId": "communityApiProxy",
+          "region": "us-central1",
+          "pinTag": true
+        }
+      },
       {
         "source": "**",
         "destination": "/index.html"
