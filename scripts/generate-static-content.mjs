@@ -10,6 +10,7 @@ const SITE_URL = (process.env.SITE_URL || 'https://huntplanner-66d5e.web.app').r
 const GOOGLE_SITE_VERIFICATION =
   process.env.GOOGLE_SITE_VERIFICATION?.trim() || '8DsEg0bgSFxcrQAgYz-ThiMPYc-b1NsLjsMKcxMUZNs'
 const ANALYTICS_ID = 'G-NC83FX30D5'
+const ANALYTICS_DISABLED_STORAGE_KEY = 'hunt-planner:analytics-disabled'
 const VALIDATE_ONLY = process.argv.includes('--validate-only')
 const CONTACT_EMAIL = 'samuelfbridge@gmail.com'
 const MIN_STABLE_ODDS_APPLICANTS = 10
@@ -338,12 +339,63 @@ function metadata({
 
 function analytics() {
   return `
-    <script async src="https://www.googletagmanager.com/gtag/js?id=${ANALYTICS_ID}"></script>
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', '${ANALYTICS_ID}');
+      (() => {
+        const measurementId = '${ANALYTICS_ID}';
+        const storageKey = '${ANALYTICS_DISABLED_STORAGE_KEY}';
+        const url = new URL(window.location.href);
+        const preference = url.searchParams.get('analytics')?.trim().toLowerCase();
+        const disable = preference === 'off' || preference === '0' || preference === 'false';
+        const enable = preference === 'on' || preference === '1' || preference === 'true';
+
+        try {
+          if (disable) window.localStorage.setItem(storageKey, '1');
+          if (enable) window.localStorage.removeItem(storageKey);
+        } catch {
+          // Storage can be unavailable in privacy-restricted browsing contexts.
+        }
+
+        if (disable || enable) {
+          url.searchParams.delete('analytics');
+          window.history.replaceState(window.history.state, '', url);
+        }
+
+        let storedDisabled = false;
+        try {
+          storedDisabled = window.localStorage.getItem(storageKey) === '1';
+        } catch {
+          // Storage can be unavailable in privacy-restricted browsing contexts.
+        }
+
+        const automated =
+          navigator.webdriver ||
+          /Codex|HeadlessChrome|PhantomJS|Playwright|Puppeteer/i.test(navigator.userAgent);
+        const hostname = window.location.hostname.toLowerCase();
+        const local =
+          hostname === 'localhost' ||
+          hostname === '0.0.0.0' ||
+          hostname === '::1' ||
+          hostname.startsWith('127.') ||
+          hostname.startsWith('10.') ||
+          hostname.startsWith('192.168.') ||
+          /^172\\.(1[6-9]|2\\d|3[0-1])\\./.test(hostname) ||
+          hostname.endsWith('.local');
+
+        if (storedDisabled || automated || local) {
+          window['ga-disable-' + measurementId] = true;
+          return;
+        }
+
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){window.dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', measurementId);
+
+        const script = document.createElement('script');
+        script.async = true;
+        script.src = 'https://www.googletagmanager.com/gtag/js?id=' + measurementId;
+        document.head.appendChild(script);
+      })();
     </script>`
 }
 
