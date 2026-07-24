@@ -275,7 +275,11 @@ export function MapExplorer({
 }
 
 export function boundaryDataPath(state: PlannerState, species: string, category: string) {
-  if (state === 'utah') return '/data/boundaries/utah.json'
+  if (state === 'utah') {
+    return species === 'Elk' && category === 'antlerless'
+      ? '/data/boundaries/utah-antlerless.json'
+      : '/data/boundaries/utah.json'
+  }
   if (state === 'colorado') return '/data/boundaries/colorado.json'
   if (state === 'idaho') {
     return category === 'limited-entry' || category === 'antlerless'
