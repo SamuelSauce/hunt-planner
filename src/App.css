@@ -184,12 +184,13 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 410px);
   gap: 12px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .map-canvas {
   display: grid;
   position: relative;
+  height: 390px;
   min-width: 0;
   min-height: 390px;
   overflow: hidden;
