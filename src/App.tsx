@@ -1337,7 +1337,7 @@ function HuntDetail({
                 <dd>{firstProbablePointText(oddsSide)}</dd>
               </div>
               <div>
-                <dt>2025 total</dt>
+                <dt>{hunt.odds.year} total</dt>
                 <dd>{oddsSide.totals?.successRatio ?? 'N/A'}</dd>
               </div>
               <div>
