@@ -1809,7 +1809,11 @@ textarea {
 .scout-panel button,
 .scout-panel input,
 .scout-panel select,
-.scout-panel textarea {
+.scout-panel textarea,
+.scout-pin-modal button,
+.scout-pin-modal input,
+.scout-pin-modal select,
+.scout-pin-modal textarea {
   font: inherit;
 }
 
@@ -1821,6 +1825,7 @@ textarea {
 .scout-pin-editor-title,
 .scout-pin-editor-title > span,
 .scout-editor-actions,
+.scout-edit-hint,
 .scout-drop-hint {
   display: flex;
   align-items: center;
@@ -1930,7 +1935,10 @@ textarea {
 
 .scout-panel select,
 .scout-panel input,
-.scout-panel textarea {
+.scout-panel textarea,
+.scout-pin-modal select,
+.scout-pin-modal input,
+.scout-pin-modal textarea {
   min-width: 0;
   box-sizing: border-box;
   color: #edf5ef;
@@ -1941,13 +1949,16 @@ textarea {
 }
 
 .scout-panel select,
-.scout-panel input {
+.scout-panel input,
+.scout-pin-modal select,
+.scout-pin-modal input {
   min-height: 32px;
   padding: 0 7px;
   font-size: 0.65rem;
 }
 
-.scout-panel textarea {
+.scout-panel textarea,
+.scout-pin-modal textarea {
   width: 100%;
   padding: 7px;
   resize: vertical;
@@ -1957,7 +1968,10 @@ textarea {
 
 .scout-panel select:focus,
 .scout-panel input:focus,
-.scout-panel textarea:focus {
+.scout-panel textarea:focus,
+.scout-pin-modal select:focus,
+.scout-pin-modal input:focus,
+.scout-pin-modal textarea:focus {
   border-color: rgba(129, 194, 153, 0.76);
   box-shadow: 0 0 0 2px rgba(83, 149, 107, 0.18);
 }
@@ -2038,6 +2052,54 @@ textarea {
   border-radius: 8px;
 }
 
+.scout-pin-modal-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(2, 8, 5, 0.68);
+  backdrop-filter: blur(8px);
+}
+
+.scout-pin-modal {
+  display: grid;
+  width: min(500px, 100%);
+  max-height: calc(100dvh - 48px);
+  box-sizing: border-box;
+  gap: 11px;
+  padding: 18px;
+  overflow-y: auto;
+  color: #edf5ef;
+  background:
+    linear-gradient(145deg, rgba(36, 66, 50, 0.98), rgba(10, 24, 16, 0.99));
+  border: 1px solid rgba(255, 225, 213, 0.28);
+  border-radius: 14px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.58);
+}
+
+.scout-pin-modal-intro {
+  margin: -3px 0 0;
+  color: #b8c9be;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.scout-pin-coordinates {
+  color: #8fa79a;
+  font-size: 0.63rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.scout-pin-section-title {
+  margin-top: 2px;
+  color: #ffe1d5;
+  font-size: 0.65rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
 .scout-pin-editor-title {
   color: #ffe1d5;
   font-size: 0.7rem;
@@ -2099,6 +2161,16 @@ textarea {
   gap: 5px;
 }
 
+.scout-pin-modal .scout-editor-actions {
+  padding-top: 4px;
+}
+
+.scout-pin-modal .scout-editor-actions button {
+  min-height: 38px;
+  padding: 0 13px;
+  font-size: 0.7rem;
+}
+
 .scout-editor-actions button.primary {
   color: #fff;
   background: #315b45;
@@ -2116,6 +2188,19 @@ textarea {
   line-height: 1.35;
 }
 
+.scout-limit-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px;
+  color: #ffd5c6;
+  background: rgba(214, 90, 46, 0.13);
+  border: 1px solid rgba(243, 183, 158, 0.22);
+  border-radius: 8px;
+}
+
+.scout-edit-hint,
 .scout-drop-hint {
   gap: 8px;
   padding: 8px 9px;
@@ -2125,15 +2210,26 @@ textarea {
   border-radius: 7px;
 }
 
+.scout-edit-hint {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.scout-edit-hint > span,
 .scout-drop-hint > span {
   display: grid;
 }
 
+.scout-edit-hint strong,
 .scout-drop-hint strong {
   color: #f7e8e0;
   font-size: 0.65rem;
 }
 
+.scout-edit-hint small,
 .scout-drop-hint small {
   color: #95aa9d;
   font-size: 0.58rem;
@@ -2141,8 +2237,8 @@ textarea {
 
 .hunt-share-pin-popup {
   z-index: 4;
-  min-width: 190px;
-  max-width: 220px !important;
+  min-width: 292px;
+  max-width: 310px !important;
 }
 
 .hunt-share-pin-popup .maplibregl-popup-content {
@@ -2178,7 +2274,7 @@ textarea {
   padding: 10px;
 }
 
-.hunt-3d-pin-bubble > div {
+.hunt-3d-pin-header {
   display: inline-flex;
   justify-content: space-between;
   align-items: center;
@@ -2200,7 +2296,7 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-.hunt-3d-pin-bubble > div button {
+.hunt-3d-pin-header button {
   display: grid;
   width: 26px;
   height: 26px;
@@ -2213,24 +2309,41 @@ textarea {
   cursor: pointer;
 }
 
-.hunt-3d-pin-bubble > button {
+.hunt-3d-pin-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.hunt-3d-pin-actions button {
   display: inline-flex;
-  min-height: 34px;
+  min-height: 38px;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 0 10px;
+  padding: 0 8px;
   color: #fff;
-  background: #d65a2e;
-  border: 1px solid #ed8b67;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 6px;
   cursor: pointer;
   font: inherit;
-  font-size: 0.7rem;
+  font-size: 0.66rem;
   font-weight: 800;
+  white-space: nowrap;
 }
 
-.hunt-3d-pin-bubble > button.shared {
+.hunt-3d-pin-actions button.save {
+  background: #315b45;
+  border-color: #658d75;
+}
+
+.hunt-3d-pin-actions button.share {
+  background: #d65a2e;
+  border-color: #ed8b67;
+}
+
+.hunt-3d-pin-actions button.share.shared {
   color: #e4ffeb;
   background: #2f7045;
   border-color: #63a878;
@@ -2741,6 +2854,49 @@ textarea {
 }
 
 @media (max-width: 640px) {
+  .scout-pin-modal-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .scout-pin-modal {
+    width: 100%;
+    max-height: min(88dvh, 720px);
+    padding: 17px 16px calc(16px + env(safe-area-inset-bottom));
+    overscroll-behavior: contain;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 17px 17px 0 0;
+  }
+
+  .scout-pin-modal select,
+  .scout-pin-modal input {
+    min-height: 42px;
+    font-size: 0.78rem;
+  }
+
+  .scout-pin-modal textarea {
+    font-size: 0.78rem;
+  }
+
+  .scout-pin-modal .scout-pin-editor-title > button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .scout-pin-modal .scout-editor-actions {
+    position: sticky;
+    bottom: calc(-16px - env(safe-area-inset-bottom));
+    padding: 10px 0 calc(16px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(10, 24, 16, 0), rgba(10, 24, 16, 1) 20%);
+  }
+
+  .scout-pin-modal .scout-editor-actions button {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+
   .state-switcher {
     width: 100%;
     grid-template-columns: repeat(2, minmax(0, 1fr));

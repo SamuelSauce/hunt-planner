@@ -11,6 +11,7 @@ import {
   Mountain,
   RotateCcw,
   Satellite,
+  Save,
   Share2,
   Sparkles,
   X,
@@ -119,6 +120,7 @@ export function Hunt3DMap({
   const pinRef = useRef<MapPinLocation | null>(pin)
   const onPinChangeRef = useRef(onPinChange)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const savePinButtonRef = useRef<HTMLButtonElement | null>(null)
   const resetViewRef = useRef<() => void>(() => undefined)
   const [boundaryFeatures, setBoundaryFeatures] = useState<BoundaryFeature[] | null>(null)
   const [boundaryError, setBoundaryError] = useState(false)
@@ -147,6 +149,7 @@ export function Hunt3DMap({
   )
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
+  const [pinEditorOpen, setPinEditorOpen] = useState(false)
   const lastPersistedWorkspaceRef = useRef('')
   const dataPath = boundaryDataPath(plannerState, hunt.species, hunt.category)
   const selectedPin = workspace.pins.find((candidate) => candidate.id === selectedPinId) ?? null
@@ -252,16 +255,24 @@ export function Hunt3DMap({
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     closeButtonRef.current?.focus()
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
     return () => {
       document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [onClose])
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (pinEditorOpen) {
+        setPinEditorOpen(false)
+        window.requestAnimationFrame(() => savePinButtonRef.current?.focus())
+        return
+      }
+      onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose, pinEditorOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -417,6 +428,7 @@ export function Hunt3DMap({
         pinRef.current = null
         onPinChangeRef.current(null)
         setSelectedPinId(pinId)
+        setPinEditorOpen(true)
       })
       const sharedPin = pinRef.current
       if (sharedPin) {
@@ -501,6 +513,7 @@ export function Hunt3DMap({
     return installLongPressPinGesture(map, (nextPin) => {
       pinRef.current = nextPin
       setSelectedPinId(null)
+      setPinEditorOpen(false)
       onPinChange(nextPin)
     })
   }, [mapReady, onPinChange])
@@ -635,8 +648,14 @@ export function Hunt3DMap({
   }
 
   const clearPin = () => {
+    setPinEditorOpen(false)
     pinRef.current = null
     onPinChange(null)
+  }
+
+  const closePinEditor = () => {
+    setPinEditorOpen(false)
+    window.requestAnimationFrame(() => savePinButtonRef.current?.focus())
   }
 
   const updateWorkspace = (
@@ -731,6 +750,7 @@ export function Hunt3DMap({
       ...current,
       pins: current.pins.filter((candidate) => candidate.id !== pinId),
     }))
+    setPinEditorOpen(false)
     setSelectedPinId(null)
   }
 
@@ -909,6 +929,7 @@ export function Hunt3DMap({
             filters={filters}
             authStatus={authStatus}
             persistenceStatus={persistenceStatus}
+            editorOpen={pinEditorOpen}
             draftLocation={pin}
             selectedPin={selectedPin}
             species={hunt.species}
@@ -919,10 +940,8 @@ export function Hunt3DMap({
             onDeleteLayer={handleDeleteLayer}
             onSavePin={handleSavePin}
             onDeletePin={handleDeletePin}
-            onCloseEditor={() => {
-              if (selectedPinId) setSelectedPinId(null)
-              else clearPin()
-            }}
+            onOpenEditor={() => setPinEditorOpen(true)}
+            onCloseEditor={closePinEditor}
             onSharePin={onShare}
             onSignIn={handleSignIn}
             onSignOut={handleSignOut}
@@ -949,27 +968,38 @@ export function Hunt3DMap({
 
       {pin && createPortal(
         <div className="hunt-3d-pin-bubble" aria-live="polite">
-          <div>
+          <div className="hunt-3d-pin-header">
             <span><MapPin size={14} aria-hidden="true" /> Dropped pin</span>
             <button type="button" onClick={clearPin} aria-label="Remove dropped pin">
               <X size={14} aria-hidden="true" />
             </button>
           </div>
           <small>{pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}</small>
-          <button
-            className={shareStatus === 'copied' || shareStatus === 'shared' ? 'shared' : ''}
-            type="button"
-            onClick={() => onShare(pin)}
-          >
-            <Share2 size={15} aria-hidden="true" />
-            {shareStatus === 'shared'
-              ? 'Shared'
-              : shareStatus === 'copied'
-                ? 'Link copied'
-                : shareStatus === 'error'
-                  ? 'Try sharing again'
-                  : 'Share this pin'}
-          </button>
+          <div className="hunt-3d-pin-actions">
+            <button
+              ref={savePinButtonRef}
+              className="save"
+              type="button"
+              onClick={() => setPinEditorOpen(true)}
+            >
+              <Save size={15} aria-hidden="true" />
+              Save this pin
+            </button>
+            <button
+              className={`share ${shareStatus === 'copied' || shareStatus === 'shared' ? 'shared' : ''}`}
+              type="button"
+              onClick={() => onShare(pin)}
+            >
+              <Share2 size={15} aria-hidden="true" />
+              {shareStatus === 'shared'
+                ? 'Shared'
+                : shareStatus === 'copied'
+                  ? 'Link copied'
+                  : shareStatus === 'error'
+                    ? 'Try again'
+                    : 'Share this pin'}
+            </button>
+          </div>
         </div>,
         pinPopupContainer,
       )}
