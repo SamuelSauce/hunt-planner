@@ -17,7 +17,7 @@ heroAlt: "Boundary silhouette with 2026 permit, 2025 harvest and draw statistics
 
 Idaho deer Hunt 1034 has an unusually clean planning story: substantial demand, a stable recent harvest record and a long 2026 season that covers all of Area 44. It is also timely. Idaho Fish and Game reminded successful 2026 controlled-hunt applicants on July 23, 2026, that they must buy their tags by August 1, 2026. Unclaimed tags, except those for unlimited and January hunts, move to Idaho's second drawing.
 
-That announcement does **not** mean Hunt 1034 will be available in the second drawing. It means a successful 2026 applicant must claim the tag on time, while an unsuccessful applicant should watch the official second-draw list rather than assume this high-demand hunt will appear.
+That announcement does **not** mean Hunt 1034 will be available in the second drawing. It means a successful 2026 applicant must claim the tag on time, while an unsuccessful applicant should watch the [official controlled-hunt application page](https://idfg.idaho.gov/licenses/controlled/apply) for second-draw information rather than assume this high-demand hunt will appear.
 
 Start with the [static Hunt Planner profile for Hunt 1034](/hunts/idaho/deer/1034-area-44/) and [open Area 44 in the Hunt Planner 3D map](/?state=ID&hunt=1034&residency=resident&view=3d) for terrain orientation.
 
