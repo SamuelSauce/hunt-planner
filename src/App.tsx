@@ -2394,12 +2394,12 @@ function weaponFilterValue(
     plannerState === 'utah'
     && species === 'Elk'
     && hunt.category === 'limited-entry'
-    && hunt.weapon === 'Any Legal Weapon'
+    && (hunt.weapon === 'Any Legal Weapon' || hunt.weapon === 'Archery')
   )
   if (!splitUtahElkSeason) return hunt.weapon
 
   const month = seasonStartMonth(hunt.seasonDateText)
-  return month ? `${hunt.weapon}::${month}` : hunt.weapon
+  return `${hunt.weapon}::${month ?? 'Season date not listed'}`
 }
 
 function weaponFilterLabel(value: string) {
