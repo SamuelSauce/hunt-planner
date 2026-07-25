@@ -22,6 +22,12 @@ import wyomingPlannerData from './data/wgfd-data.json'
 import { initAnalytics, trackEvent } from './analytics'
 import { CommunityBoard } from './community/CommunityBoard'
 import { estimateP50Draw, opportunityScore, type DrawTimeEstimate } from './drawMetrics'
+import {
+  defaultLandAccessForHunt,
+  landAccessOptions,
+  matchesLandAccess,
+  type LandAccess,
+} from './landAccess'
 import { formatMapPin, parseMapPin, type MapPinLocation } from './mapPin'
 import { MapExplorer } from './MapExplorer'
 import './App.css'
@@ -56,6 +62,7 @@ type PlannerFilters = {
   species: string
   category: Category
   weapon: string
+  landAccess: LandAccess
 }
 
 type ContactBodyInput = {
@@ -328,6 +335,7 @@ function PlannerApp() {
   const [residency, setResidency] = useState<Residency>(initialShare.residency)
   const [query, setQuery] = useState('')
   const [weapon, setWeapon] = useState(initialShare.weapon)
+  const [landAccess, setLandAccess] = useState<LandAccess>(initialShare.landAccess)
   const [sortMode, setSortMode] = useState<SortMode>('draw')
   const [selectedId, setSelectedId] = useState<string | null>(initialShare.hunt?.id ?? null)
   const [reportQuery, setReportQuery] = useState('')
@@ -359,6 +367,7 @@ function PlannerApp() {
       setCategory(nextShare.category)
       setResidency(nextShare.residency)
       setWeapon(nextShare.weapon)
+      setLandAccess(nextShare.landAccess)
       setSelectedId(nextShare.hunt?.id ?? null)
       setMap3dHunt(nextView === 'planner' && nextShare.open3D ? nextShare.hunt : null)
       setMap3dPin(nextView === 'planner' && nextShare.open3D ? nextShare.pin : null)
@@ -377,7 +386,11 @@ function PlannerApp() {
     const scoped = activeData.hunts.filter((hunt) => {
       return (
         hunt.species === species &&
-        (category === 'all' || hunt.category === category)
+        (category === 'all' || hunt.category === category) &&
+        (
+          !usesLandAccessFilter(plannerState, species, category)
+          || matchesLandAccess(hunt, landAccess)
+        )
       )
     })
     const options = new Map<string, string>()
@@ -389,7 +402,7 @@ function PlannerApp() {
       { value: 'all', label: 'All weapons' },
       ...[...options].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
     ]
-  }, [activeData, category, plannerState, species])
+  }, [activeData, category, landAccess, plannerState, species])
 
   const visibleCategoryOptions = useMemo(() => {
     const categories = new Set(activeData.hunts.map((hunt) => hunt.category))
@@ -403,6 +416,10 @@ function PlannerApp() {
     return activeData.hunts
       .filter((hunt) => hunt.species === species)
       .filter((hunt) => category === 'all' || hunt.category === category)
+      .filter((hunt) => (
+        !usesLandAccessFilter(plannerState, species, category)
+        || matchesLandAccess(hunt, landAccess)
+      ))
       .filter((hunt) => weapon === 'all' || weaponFilterValue(hunt, plannerState, species) === weapon)
       .filter((hunt) => {
         if (!needle) return true
@@ -418,7 +435,7 @@ function PlannerApp() {
           .includes(needle)
       })
       .sort((a, b) => compareHunts(a, b, sortMode, residency))
-  }, [activeData, category, plannerState, query, residency, sortMode, species, weapon])
+  }, [activeData, category, landAccess, plannerState, query, residency, sortMode, species, weapon])
 
   const selectedHunt = useMemo(() => {
     return (
@@ -434,11 +451,11 @@ function PlannerApp() {
     replaceShareUrl(
       selectedHunt,
       residency,
-      { species, category, weapon },
+      { species, category, weapon, landAccess },
       map3dHunt?.id === selectedHunt.id,
       map3dHunt?.id === selectedHunt.id ? map3dPin : null,
     )
-  }, [category, map3dHunt, map3dPin, plannerState, residency, selectedHunt, species, view, weapon])
+  }, [category, landAccess, map3dHunt, map3dPin, plannerState, residency, selectedHunt, species, view, weapon])
 
   useEffect(() => {
     if (!hasRenderedInitialSort.current) {
@@ -490,7 +507,7 @@ function PlannerApp() {
 
   const contactState = view === 'contact' ? getInitialShareState() : null
   const plannerHref = selectedId && selectedHunt
-    ? selectedHuntUrl(selectedHunt, residency, { species, category, weapon })
+    ? selectedHuntUrl(selectedHunt, residency, { species, category, weapon, landAccess })
     : '/'
   const communityHref = communityPageUrl()
   const contactHref = contactPageUrl()
@@ -507,6 +524,7 @@ function PlannerApp() {
     setSpecies(nextSpecies)
     setCategory('all')
     setWeapon('all')
+    setLandAccess('all')
     setSelectedId(null)
     setReportQuery('')
   }
@@ -520,7 +538,7 @@ function PlannerApp() {
     setSelectedId(hunt.id)
   }
   const sharePlannerHunt = (hunt: Hunt) => {
-    shareHuntLink(hunt, residency, { species, category, weapon })
+    shareHuntLink(hunt, residency, { species, category, weapon, landAccess })
       .then((result) => {
         if (result === 'dismissed') return
         trackEvent('share_hunt', {
@@ -542,7 +560,12 @@ function PlannerApp() {
       species: hunt.species,
       source,
     })
-    const nextUrl = selectedHuntUrl(hunt, residency, { species, category, weapon }, true)
+    const nextUrl = selectedHuntUrl(
+      hunt,
+      residency,
+      { species, category, weapon, landAccess },
+      true,
+    )
     if (nextUrl !== window.location.href) {
       window.history.pushState({ huntPlannerView: '3d' }, '', nextUrl)
     }
@@ -561,7 +584,7 @@ function PlannerApp() {
     setMap3dHunt(null)
   }
   const shareHunt3DMap = (hunt: Hunt, pin: MapPinLocation | null) => {
-    shareHunt3DMapLink(hunt, residency, { species, category, weapon }, pin)
+    shareHunt3DMapLink(hunt, residency, { species, category, weapon, landAccess }, pin)
       .then((result) => {
         if (result === 'dismissed') {
           setMapShareStatus('idle')
@@ -716,6 +739,7 @@ function PlannerApp() {
                   onClick={() => {
                     setSpecies(option)
                     setWeapon('all')
+                    setLandAccess(defaultLandAccess(plannerState, option, category))
                     setSelectedId(null)
                   }}
                 >
@@ -736,6 +760,7 @@ function PlannerApp() {
                   onClick={() => {
                     setCategory(option.value)
                     setWeapon('all')
+                    setLandAccess(defaultLandAccess(plannerState, species, option.value))
                     setSelectedId(null)
                   }}
                 >
@@ -755,6 +780,25 @@ function PlannerApp() {
               ))}
             </select>
           </label>
+
+          {usesLandAccessFilter(plannerState, species, category) && (
+            <label className="field">
+              <span>Land access</span>
+              <select
+                value={landAccess}
+                onChange={(event) => {
+                  setLandAccess(event.target.value as LandAccess)
+                  setSelectedId(null)
+                }}
+              >
+                {landAccessOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <div className="field">
             <span>Residency</span>
@@ -854,7 +898,12 @@ function PlannerApp() {
               residency={residency}
               shareStatus={shareStatus}
               onShareLink={() => {
-                shareHuntLink(selectedHunt, residency, { species, category, weapon })
+                shareHuntLink(selectedHunt, residency, {
+                  species,
+                  category,
+                  weapon,
+                  landAccess,
+                })
                   .then((result) => {
                     if (result === 'dismissed') {
                       setShareStatus('idle')
@@ -2029,6 +2078,22 @@ function categoryLabel(value: Category | Hunt['category'], state?: PlannerState)
   return labels[value] ?? value
 }
 
+function usesLandAccessFilter(
+  state: PlannerState,
+  species: string,
+  category: Category,
+) {
+  return state === 'utah' && species === 'Elk' && category === 'antlerless'
+}
+
+function defaultLandAccess(
+  state: PlannerState,
+  species: string,
+  category: Category,
+): LandAccess {
+  return usesLandAccessFilter(state, species, category) ? 'public-mixed' : 'all'
+}
+
 function residencyLabel(value: Residency) {
   return value === 'resident' ? 'Resident' : 'Nonresident'
 }
@@ -2063,6 +2128,7 @@ function getInitialShareState() {
     species: string
     category: Category
     weapon: string
+    landAccess: LandAccess
     open3D: boolean
     pin: MapPinLocation | null
   } = {
@@ -2072,6 +2138,7 @@ function getInitialShareState() {
     species: 'Deer',
     category: 'general-otc',
     weapon: 'Any Legal Weapon (Late)',
+    landAccess: 'all',
     open3D: false,
     pin: null,
   }
@@ -2165,10 +2232,37 @@ function getInitialShareState() {
   const weapon = weaponParam && weaponMatchesState && weaponMatchesHunt
     ? weaponParam
     : defaultWeapon
+  const landAccessParam = params.get('landAccess')
+  const validLandAccess = landAccessParam === 'public-mixed'
+    || landAccessParam === 'private-only'
+    || landAccessParam === 'all'
+  const supportsLandAccess = usesLandAccessFilter(resolvedState, species, category)
+  const landAccessMatchesHunt = !hunt
+    || landAccessParam === 'all'
+    || (validLandAccess && matchesLandAccess(hunt, landAccessParam))
+  const landAccess: LandAccess = supportsLandAccess
+    ? (
+      validLandAccess && landAccessMatchesHunt
+        ? landAccessParam
+        : hunt
+          ? defaultLandAccessForHunt(hunt)
+          : 'public-mixed'
+    )
+    : 'all'
   const open3D = params.get('view') === '3d' && hunt !== null
   const pin = open3D ? parseMapPin(params.get('pin')) : null
 
-  return { hunt, residency, state: resolvedState, species, category, weapon, open3D, pin }
+  return {
+    hunt,
+    residency,
+    state: resolvedState,
+    species,
+    category,
+    weapon,
+    landAccess,
+    open3D,
+    pin,
+  }
 }
 
 function normalizePlannerState(value: unknown): PlannerState | null {
@@ -2200,6 +2294,13 @@ function selectedHuntUrl(
     url.searchParams.set('species', filters.species)
     url.searchParams.set('huntType', filters.category)
     url.searchParams.set('weapon', filters.weapon)
+    if (usesLandAccessFilter(
+      normalizePlannerState(hunt.state) ?? 'utah',
+      filters.species,
+      filters.category,
+    )) {
+      url.searchParams.set('landAccess', filters.landAccess)
+    }
     url.hash = 'planner'
   }
   return url.toString()

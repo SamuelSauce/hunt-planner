@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { LoaderCircle, MapPinned } from 'lucide-react'
 import { estimateP50Draw, opportunityScore } from './drawMetrics'
+import {
+  geometryArea,
+  geometryContainsCoordinate,
+  svgPointToCoordinate,
+} from './mapGeometry'
 
 export type PlannerState = 'utah' | 'colorado' | 'idaho' | 'wyoming'
 type Residency = 'resident' | 'nonresident'
@@ -33,6 +38,7 @@ export type MapHunt = {
   huntName: string
   species: string
   planningYear?: number | null
+  seasonDateText?: string | null
   mapUnitIds?: string[]
   harvest: { successRate: number } | null
   odds: {
@@ -71,6 +77,7 @@ type FeatureSummary = {
   hunts: MapHunt[]
   representativeHunt: MapHunt | null
   value: number | null
+  area: number
 }
 
 export function MapExplorer({
@@ -96,7 +103,8 @@ export function MapExplorer({
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [metric, setMetric] = useState<MetricMode>('harvest')
-  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [hoveredIds, setHoveredIds] = useState<string[]>([])
+  const [overlapIds, setOverlapIds] = useState<string[]>([])
   const boundaryPlanningYear = mostCommonPlanningYear(hunts)
   const dataPath = boundaryDataPath(
     plannerState,
@@ -107,8 +115,9 @@ export function MapExplorer({
 
   useEffect(() => {
     let cancelled = false
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear the prior hover when the boundary source changes.
-    setHoveredId(null)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear prior pointer state when the boundary source changes.
+    setHoveredIds([])
+    setOverlapIds([])
     if (!dataPath) {
       setData(null)
       setLoadError(false)
@@ -152,6 +161,7 @@ export function MapExplorer({
         hunts: matchingHunts,
         representativeHunt,
         value: representativeHunt ? metricValue(representativeHunt, metric, residency) : null,
+        area: geometryArea(feature.geometry),
       }
     })
   }, [data, hunts, metric, residency, selectedHunt])
@@ -162,13 +172,45 @@ export function MapExplorer({
   const selectedSummary = summaries.find((summary) =>
     selectedHunt ? summary.hunts.some((hunt) => hunt.id === selectedHunt.id) : false,
   )
-  const activeSummary = summaries.find((summary) => summary.feature.id === hoveredId)
+  const hoveredSummaries = prioritizeSummaries(
+    summariesForIds(matchingSummaries, hoveredIds),
+    selectedHunt,
+  )
+  const overlapSummaries = prioritizeSummaries(
+    summariesForIds(matchingSummaries, overlapIds),
+    selectedHunt,
+  )
+  const layerSummaries = [...matchingSummaries]
+    .sort((a, b) => compareSummaryPriority(b, a, selectedHunt))
+  const activeSummary = hoveredSummaries[0]
     ?? selectedSummary
     ?? matchingSummaries[0]
     ?? null
   const previewHunt = activeSummary?.representativeHunt ?? null
   const bounds = useMemo(() => geometryBounds(data?.features ?? []), [data])
   const pathFor = (feature: BoundaryFeature) => geometryPath(feature.geometry, bounds)
+  const updateMapPointer = (
+    clientX: number,
+    clientY: number,
+    svg: SVGSVGElement,
+  ) => {
+    const screenMatrix = svg.getScreenCTM()
+    if (!screenMatrix) return
+    const svgPoint = new DOMPoint(clientX, clientY).matrixTransform(screenMatrix.inverse())
+    const coordinate = svgPointToCoordinate(svgPoint, bounds)
+    const hitSummaries = prioritizeSummaries(
+      matchingSummaries.filter((summary) => (
+        geometryContainsCoordinate(summary.feature.geometry, coordinate)
+      )),
+      selectedHunt,
+    )
+    const nextIds = hitSummaries.map((summary) => summary.feature.id)
+    setHoveredIds((currentIds) => sameIds(currentIds, nextIds) ? currentIds : nextIds)
+    const nextOverlapIds = nextIds.length > 1 ? nextIds : []
+    setOverlapIds((currentIds) => (
+      sameIds(currentIds, nextOverlapIds) ? currentIds : nextOverlapIds
+    ))
+  }
 
   if (!dataPath) {
     return (
@@ -210,29 +252,42 @@ export function MapExplorer({
       ) : (
         <div className="map-explorer-body">
           <div className="map-canvas">
-            <svg viewBox="0 0 800 500" role="img" aria-label={`${data.label} colored by ${metricLabel(metric)}`}>
+            <svg
+              viewBox="0 0 800 500"
+              role="img"
+              aria-label={`${data.label} colored by ${metricLabel(metric)}`}
+              onMouseMove={(event) => (
+                updateMapPointer(event.clientX, event.clientY, event.currentTarget)
+              )}
+              onPointerDown={(event) => (
+                updateMapPointer(event.clientX, event.clientY, event.currentTarget)
+              )}
+            >
               <g className="map-context">
                 {summaries.map((summary) => (
                   <path key={`context-${summary.feature.id}`} d={pathFor(summary.feature)} />
                 ))}
               </g>
               <g className="map-active-boundaries">
-                {matchingSummaries.map((summary) => {
+                {layerSummaries.map((summary) => {
                   const selected = selectedSummary?.feature.id === summary.feature.id
-                  const hovered = hoveredId === summary.feature.id
+                  const hovered = hoveredIds.includes(summary.feature.id)
+                  const primaryHovered = activeSummary?.feature.id === summary.feature.id
+                  const overlapCount = hovered ? hoveredIds.length : 1
                   return (
                     <path
                       key={summary.feature.id}
                       d={pathFor(summary.feature)}
-                      className={`${selected ? 'selected' : ''} ${hovered ? 'hovered' : ''}`}
+                      className={`${selected ? 'selected' : ''} ${hovered ? 'hovered' : ''} ${primaryHovered ? 'primary-hover' : ''}`}
                       style={{ fill: mapColor(summary.value, metric, colorRange) }}
                       role="button"
                       tabIndex={0}
-                      aria-label={boundaryAria(summary, metric)}
-                      onMouseEnter={() => setHoveredId(summary.feature.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                      onFocus={() => setHoveredId(summary.feature.id)}
-                      onBlur={() => setHoveredId(null)}
+                      aria-label={boundaryAria(summary, metric, overlapCount)}
+                      onFocus={() => {
+                        setHoveredIds([summary.feature.id])
+                        setOverlapIds([])
+                      }}
+                      onBlur={() => setHoveredIds([])}
                       onClick={() => summary.representativeHunt && onSelect(summary.representativeHunt)}
                       onKeyDown={(event) => {
                         if ((event.key === 'Enter' || event.key === ' ') && summary.representativeHunt) {
@@ -241,7 +296,7 @@ export function MapExplorer({
                         }
                       }}
                     >
-                      <title>{boundaryAria(summary, metric)}</title>
+                      <title>{boundaryAria(summary, metric, overlapCount)}</title>
                     </path>
                   )
                 })}
@@ -258,6 +313,44 @@ export function MapExplorer({
           </div>
 
           <div className="map-summary" aria-live="polite">
+            {overlapSummaries.length > 1 && (
+              <div
+                className="map-overlap-picker"
+                aria-label={`${overlapSummaries.length} overlapping hunt areas`}
+              >
+                <div className="map-overlap-heading">
+                  <strong>{overlapSummaries.length} overlapping hunt areas</strong>
+                  <span>Choose a season to bring its boundary forward.</span>
+                </div>
+                <div className="map-overlap-list">
+                  {overlapSummaries.map((summary) => (
+                    <div className="map-overlap-area" key={summary.feature.id}>
+                      <div className="map-overlap-area-heading">
+                        <span>{summary.feature.name}</span>
+                        <small>{summary.feature.detail || `Unit ${summary.feature.id}`}</small>
+                      </div>
+                      <div className="map-overlap-hunts">
+                        {sortHuntsForPicker(summary.hunts).map((hunt) => {
+                          const active = previewHunt?.id === hunt.id
+                          return (
+                            <button
+                              type="button"
+                              key={hunt.id}
+                              className={active ? 'active' : ''}
+                              aria-pressed={active}
+                              onClick={() => onSelect(hunt)}
+                            >
+                              <strong>{hunt.huntNumber}</strong>
+                              <span>{hunt.seasonDateText || hunt.huntName}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {activeSummary && previewHunt ? (
               <>
                 <div className="map-preview-heading">
@@ -278,7 +371,7 @@ export function MapExplorer({
                 <span>Try a broader hunt type or weapon filter.</span>
               </>
             )}
-            <small>Hover or tap a highlighted boundary to preview its matching hunts.</small>
+            <small>Hover or tap a highlighted boundary to preview it. Choose from the overlap list when hunt areas stack.</small>
           </div>
         </div>
       )}
@@ -360,8 +453,70 @@ function bestHunt(hunts: MapHunt[], metric: MetricMode, residency: Residency) {
   })[0]
 }
 
-function boundaryAria(summary: FeatureSummary, metric: MetricMode) {
-  return `${summary.feature.name}, ${formatMetricValue(summary.value, metric)}, ${summary.hunts.length} matching hunts`
+function summariesForIds(summaries: FeatureSummary[], ids: string[]) {
+  return ids
+    .map((id) => summaries.find((summary) => summary.feature.id === id))
+    .filter((summary): summary is FeatureSummary => Boolean(summary))
+}
+
+function prioritizeSummaries(
+  summaries: FeatureSummary[],
+  selectedHunt: MapHunt | null,
+) {
+  return [...summaries].sort((a, b) => compareSummaryPriority(a, b, selectedHunt))
+}
+
+function compareSummaryPriority(
+  a: FeatureSummary,
+  b: FeatureSummary,
+  selectedHunt: MapHunt | null,
+) {
+  const aSelected = selectedHunt
+    ? a.hunts.some((hunt) => hunt.id === selectedHunt.id)
+    : false
+  const bSelected = selectedHunt
+    ? b.hunts.some((hunt) => hunt.id === selectedHunt.id)
+    : false
+  if (aSelected !== bSelected) return aSelected ? -1 : 1
+  if (a.area !== b.area) return a.area - b.area
+
+  const seasonDifference = earliestSeasonStart(a.hunts) - earliestSeasonStart(b.hunts)
+  if (seasonDifference !== 0) return seasonDifference
+  const aHuntNumber = sortHuntsForPicker(a.hunts)[0]?.huntNumber ?? ''
+  const bHuntNumber = sortHuntsForPicker(b.hunts)[0]?.huntNumber ?? ''
+  return aHuntNumber.localeCompare(bHuntNumber) || a.feature.id.localeCompare(b.feature.id)
+}
+
+function sortHuntsForPicker(hunts: MapHunt[]) {
+  return [...hunts].sort((a, b) => (
+    seasonStart(a) - seasonStart(b)
+    || a.huntNumber.localeCompare(b.huntNumber)
+  ))
+}
+
+function earliestSeasonStart(hunts: MapHunt[]) {
+  return Math.min(...hunts.map(seasonStart), Infinity)
+}
+
+function seasonStart(hunt: MapHunt) {
+  const startText = hunt.seasonDateText?.split(' - ')[0]
+  const timestamp = startText ? Date.parse(startText) : Number.NaN
+  return Number.isFinite(timestamp) ? timestamp : Infinity
+}
+
+function sameIds(a: string[], b: string[]) {
+  return a.length === b.length && a.every((id, index) => id === b[index])
+}
+
+function boundaryAria(
+  summary: FeatureSummary,
+  metric: MetricMode,
+  overlapCount = 1,
+) {
+  const overlapText = overlapCount > 1
+    ? `, ${overlapCount} overlapping hunt areas`
+    : ''
+  return `${summary.feature.name}, ${formatMetricValue(summary.value, metric)}${overlapText}, ${summary.hunts.length} matching hunts`
 }
 
 function geometryBounds(features: BoundaryFeature[]) {

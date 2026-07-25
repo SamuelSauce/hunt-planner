@@ -15,6 +15,7 @@
     "content:build": "node scripts/generate-static-content.mjs",
     "content:validate": "node scripts/generate-static-content.mjs --validate-only",
     "content:map-card": "python3 scripts/generate-map-card.py",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "seo:check": "node scripts/check-static-output.mjs",
     "sites:prepare": "node scripts/prepare-sites-build.mjs",
     "test:scouting": "node --experimental-strip-types --test test/scouting-model.test.ts worker/scouting.test.js",
