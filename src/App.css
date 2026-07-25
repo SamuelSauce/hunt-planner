@@ -121,6 +121,7 @@
 .map-explorer {
   display: grid;
   grid-area: map;
+  align-content: start;
   gap: 12px;
   min-width: 0;
   padding: 14px;
@@ -184,14 +185,16 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 410px);
   gap: 12px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .map-canvas {
   display: grid;
   position: relative;
+  height: 26.5vw;
   min-width: 0;
   min-height: 390px;
+  max-height: 540px;
   overflow: hidden;
   background: #f7faf8;
   border: 1px solid #e1e9e2;

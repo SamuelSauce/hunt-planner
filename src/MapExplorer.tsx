@@ -32,6 +32,7 @@ export type MapHunt = {
   huntNumber: string
   huntName: string
   species: string
+  planningYear?: number | null
   mapUnitIds?: string[]
   harvest: { successRate: number } | null
   odds: {
@@ -68,6 +69,7 @@ export type BoundaryData = {
 type FeatureSummary = {
   feature: BoundaryFeature
   hunts: MapHunt[]
+  representativeHunt: MapHunt | null
   value: number | null
 }
 
@@ -95,7 +97,13 @@ export function MapExplorer({
   const [loadError, setLoadError] = useState(false)
   const [metric, setMetric] = useState<MetricMode>('harvest')
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const dataPath = boundaryDataPath(plannerState, species, category)
+  const boundaryPlanningYear = mostCommonPlanningYear(hunts)
+  const dataPath = boundaryDataPath(
+    plannerState,
+    species,
+    category,
+    boundaryPlanningYear,
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -108,7 +116,7 @@ export function MapExplorer({
     }
     setLoading(true)
     setLoadError(false)
-    fetch(dataPath)
+    fetch(dataPath, { cache: 'no-store' })
       .then((response) => {
         if (!response.ok) throw new Error(`Boundary data ${response.status}`)
         return response.json() as Promise<BoundaryData>
@@ -134,13 +142,19 @@ export function MapExplorer({
     if (!data) return []
     return data.features.map((feature) => {
       const matchingHunts = hunts.filter((hunt) => featureMatchesHunt(feature, hunt))
+      const mappedSelectedHunt = selectedHunt
+        ? matchingHunts.find((hunt) => hunt.id === selectedHunt.id) ?? null
+        : null
+      const representativeHunt =
+        mappedSelectedHunt ?? bestHunt(matchingHunts, metric, residency) ?? null
       return {
         feature,
         hunts: matchingHunts,
-        value: average(matchingHunts.map((hunt) => metricValue(hunt, metric, residency))),
+        representativeHunt,
+        value: representativeHunt ? metricValue(representativeHunt, metric, residency) : null,
       }
     })
-  }, [data, hunts, metric, residency])
+  }, [data, hunts, metric, residency, selectedHunt])
 
   const matchingSummaries = summaries.filter((summary) => summary.hunts.length > 0)
   const colorRange = metricRange(matchingSummaries.map((summary) => summary.value))
@@ -152,10 +166,7 @@ export function MapExplorer({
     ?? selectedSummary
     ?? matchingSummaries[0]
     ?? null
-  const huntForSummary = (summary: FeatureSummary) =>
-    (selectedHunt && summary.hunts.find((hunt) => hunt.id === selectedHunt.id))
-    ?? bestHunt(summary.hunts, metric, residency)
-  const previewHunt = activeSummary?.hunts[0] ? huntForSummary(activeSummary) : null
+  const previewHunt = activeSummary?.representativeHunt ?? null
   const bounds = useMemo(() => geometryBounds(data?.features ?? []), [data])
   const pathFor = (feature: BoundaryFeature) => geometryPath(feature.geometry, bounds)
 
@@ -222,11 +233,11 @@ export function MapExplorer({
                       onMouseLeave={() => setHoveredId(null)}
                       onFocus={() => setHoveredId(summary.feature.id)}
                       onBlur={() => setHoveredId(null)}
-                      onClick={() => summary.hunts[0] && onSelect(huntForSummary(summary))}
+                      onClick={() => summary.representativeHunt && onSelect(summary.representativeHunt)}
                       onKeyDown={(event) => {
-                        if ((event.key === 'Enter' || event.key === ' ') && summary.hunts[0]) {
+                        if ((event.key === 'Enter' || event.key === ' ') && summary.representativeHunt) {
                           event.preventDefault()
-                          onSelect(huntForSummary(summary))
+                          onSelect(summary.representativeHunt)
                         }
                       }}
                     >
@@ -276,8 +287,17 @@ export function MapExplorer({
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- Shared pure map helper.
-export function boundaryDataPath(state: PlannerState, species: string, category: string) {
-  if (state === 'utah') return '/data/boundaries/utah.json'
+export function boundaryDataPath(
+  state: PlannerState,
+  species: string,
+  category: string,
+  planningYear: number | null = null,
+) {
+  if (state === 'utah') {
+    return species === 'Elk' && category === 'antlerless'
+      ? `/data/boundaries/utah-antlerless-${planningYear ?? 2026}.json`
+      : '/data/boundaries/utah.json'
+  }
   if (state === 'colorado') return '/data/boundaries/colorado.json'
   if (state === 'idaho') {
     return category === 'limited-entry' || category === 'antlerless'
@@ -300,6 +320,17 @@ export function boundaryDataPath(state: PlannerState, species: string, category:
   return null
 }
 
+function mostCommonPlanningYear(hunts: MapHunt[]) {
+  const counts = new Map<number, number>()
+  for (const hunt of hunts) {
+    if (!hunt.planningYear) continue
+    counts.set(hunt.planningYear, (counts.get(hunt.planningYear) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort(([yearA, countA], [yearB, countB]) => countB - countA || yearB - yearA)[0]?.[0]
+    ?? null
+}
+
 // eslint-disable-next-line react-refresh/only-export-components -- Shared pure map helper.
 export function featureMatchesHunt(feature: BoundaryFeature, hunt: MapHunt) {
   if (feature.species && feature.species !== hunt.species) return false
@@ -317,6 +348,11 @@ function metricValue(hunt: MapHunt, metric: MetricMode, residency: Residency) {
 
 function bestHunt(hunts: MapHunt[], metric: MetricMode, residency: Residency) {
   return [...hunts].sort((a, b) => {
+    if (metric === 'harvest') {
+      const drawDataDifference =
+        Number(Boolean(b.odds || b.drawProfile)) - Number(Boolean(a.odds || a.drawProfile))
+      if (drawDataDifference !== 0) return drawDataDifference
+    }
     const aValue = metricValue(a, metric, residency)
     const bValue = metricValue(b, metric, residency)
     if (metric === 'draw') return (aValue ?? Infinity) - (bValue ?? Infinity)
@@ -368,11 +404,6 @@ function visitCoordinates(value: unknown, visitor: (coordinate: [number, number]
     return
   }
   value.forEach((item) => visitCoordinates(item, visitor))
-}
-
-function average(values: Array<number | null>) {
-  const present = values.filter((value): value is number => value !== null && Number.isFinite(value))
-  return present.length > 0 ? present.reduce((sum, value) => sum + value, 0) / present.length : null
 }
 
 function metricRange(values: Array<number | null>): MetricRange {

@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outputDir = path.join(rootDir, 'public', 'data', 'boundaries')
+const UTAH_HUNT_PLANNER_BASE = 'https://dwrapps.utah.gov/huntboundary'
+const UTAH_HUNT_MAP_REFERER = 'https://dwrapps.utah.gov/'
 
 const sources = {
   utah: 'https://services.arcgis.com/ZzrwjTRez6FJiOq4/arcgis/rest/services/Utah_Big_Game_Hunt_Boundaries_2025/FeatureServer',
@@ -20,6 +22,10 @@ const sources = {
 
 async function main() {
   await mkdir(outputDir, { recursive: true })
+
+  const utahAntlerlessData = await fetchUtahAntlerlessBoundaryData()
+  await writeBoundaryData('utah-antlerless.json', utahAntlerlessData)
+  await writeBoundaryData(`utah-antlerless-${utahAntlerlessData.year}.json`, utahAntlerlessData)
 
   const utahHuntRows = await fetchAttributes(`${sources.utah}/1`, '1=1', '*')
   const huntsByBoundary = new Map()
@@ -97,20 +103,86 @@ async function main() {
         geometry: normalizeGeometry(feature.geometry),
       }))
       .filter((feature) => feature.id && feature.geometry)
-    const data = {
+    await writeBoundaryData(job.file, {
       state: job.state,
       year: job.year,
       label: job.label,
       sourceUrl: job.source.replace(/\/\d+$/, ''),
       features,
-    }
-    await writeFile(path.join(outputDir, job.file), `${JSON.stringify(data)}\n`)
-    const size = Buffer.byteLength(JSON.stringify(data)) / 1024
-    console.log(`${job.file}: ${features.length} boundaries, ${size.toFixed(0)} KB`)
+    })
   }
 }
 
-async function fetchGeoJson(layerUrl, where, outFields) {
+async function fetchUtahAntlerlessBoundaryData() {
+  const huntTableUrl = new URL(`${UTAH_HUNT_PLANNER_BASE}/HuntTableData`)
+  huntTableUrl.searchParams.set('species', 'Elk')
+  huntTableUrl.searchParams.set('gender', 'Antlerless')
+  const hunts = await fetchJson(huntTableUrl)
+  const huntNumbersByBoundary = new Map()
+
+  await eachWithConcurrency(hunts, 12, async (hunt) => {
+    const boundaryUrl = new URL(`${UTAH_HUNT_PLANNER_BASE}/HuntNumberToBoundaries`)
+    boundaryUrl.searchParams.set('HN', hunt.HUNT_NBR)
+    const boundaryIds = await fetchJson(boundaryUrl)
+    for (const boundaryId of boundaryIds) {
+      const key = String(boundaryId)
+      const huntNumbers = huntNumbersByBoundary.get(key) ?? []
+      huntNumbers.push(String(hunt.HUNT_NBR))
+      huntNumbersByBoundary.set(key, huntNumbers)
+    }
+  })
+
+  const boundaryIds = [...huntNumbersByBoundary.keys()]
+  const huntMapData = await fetchJson(`${UTAH_HUNT_PLANNER_BASE}/HuntMapData`)
+  const serviceBase = huntMapData.find((entry) => entry.keyName === 'HUNT_BOUNDARY_PROD')?.serviceURL
+  const tokenValue = huntMapData.find((entry) => entry.keyName === 'serviceToken')?.serviceURL
+  if (!serviceBase || !tokenValue) {
+    throw new Error('Utah Hunt Planner did not provide its current boundary service.')
+  }
+
+  const geojson = await fetchGeoJson(
+    `${serviceBase}MapServer/0`,
+    `BoundaryID IN (${boundaryIds.join(',')})`,
+    'BoundaryID,Boundary_Name',
+    {
+      token: tokenValue.replace(/^\?token=/, ''),
+      headers: { Referer: UTAH_HUNT_MAP_REFERER },
+    },
+  )
+  const features = geojson.features
+    .map((feature) => ({
+      id: String(feature.properties.BoundaryID),
+      name: feature.properties.Boundary_Name,
+      huntNumbers: unique(huntNumbersByBoundary.get(String(feature.properties.BoundaryID)) ?? []),
+      geometry: normalizeGeometry(feature.geometry),
+    }))
+    .filter((feature) => feature.id && feature.geometry && feature.huntNumbers.length > 0)
+  const years = hunts.flatMap((hunt) => {
+    const firstYear = String(hunt.SEASON_OPEN_DATE_1 ?? hunt.SEASON_DATE_TEXT ?? '').match(/\b20\d{2}\b/)?.[0]
+    return firstYear ? [Number(firstYear)] : []
+  })
+  const planningYear = [...years.reduce((counts, year) => {
+    counts.set(year, (counts.get(year) ?? 0) + 1)
+    return counts
+  }, new Map()).entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0]
+
+  return {
+    state: 'utah',
+    year: planningYear ?? new Date().getFullYear(),
+    label: 'UDWR antlerless elk hunt boundaries',
+    sourceUrl: `${UTAH_HUNT_PLANNER_BASE}/hbstart?SE=Antlerless&SP=Elk&TB=true`,
+    features,
+  }
+}
+
+async function writeBoundaryData(file, data) {
+  const serialized = JSON.stringify(data)
+  await writeFile(path.join(outputDir, file), `${serialized}\n`)
+  const size = Buffer.byteLength(serialized) / 1024
+  console.log(`${file}: ${data.features.length} boundaries, ${size.toFixed(0)} KB`)
+}
+
+async function fetchGeoJson(layerUrl, where, outFields, options = {}) {
   const url = new URL(`${layerUrl}/query`)
   url.searchParams.set('where', where)
   url.searchParams.set('outFields', outFields)
@@ -119,7 +191,8 @@ async function fetchGeoJson(layerUrl, where, outFields) {
   url.searchParams.set('geometryPrecision', '4')
   url.searchParams.set('maxAllowableOffset', '0.002')
   url.searchParams.set('f', 'geojson')
-  const response = await fetch(url)
+  if (options.token) url.searchParams.set('token', options.token)
+  const response = await fetch(url, { headers: options.headers })
   if (!response.ok) throw new Error(`Boundary fetch failed ${response.status}: ${layerUrl}`)
   const data = await response.json()
   if (data.error) throw new Error(`${layerUrl}: ${data.error.message}`)
@@ -136,6 +209,28 @@ async function fetchAttributes(layerUrl, where, outFields) {
   if (!response.ok) throw new Error(`Attribute fetch failed ${response.status}: ${layerUrl}`)
   const data = await response.json()
   return (data.features ?? []).map((feature) => feature.attributes)
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`JSON fetch failed ${response.status}: ${url}`)
+  const data = await response.json()
+  if (data?.error) throw new Error(`${url}: ${data.error.message}`)
+  if (data === 'Error') throw new Error(`Endpoint returned Error: ${url}`)
+  return data
+}
+
+async function eachWithConcurrency(items, concurrency, worker) {
+  let nextIndex = 0
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const item = items[nextIndex]
+        nextIndex += 1
+        await worker(item)
+      }
+    }),
+  )
 }
 
 function normalizeGeometry(geometry) {
