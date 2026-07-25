@@ -370,6 +370,7 @@ def create_card(
     hunt: dict[str, Any],
     features: list[dict[str, Any]],
     source_label: str,
+    series_label: str,
     output: Path,
 ) -> None:
     image = Image.new("RGBA", (WIDTH, HEIGHT), (23, 52, 39, 255))
@@ -402,7 +403,7 @@ def create_card(
     small_font = font(FONT_REGULAR, 16)
 
     state_label = state.upper()
-    eyebrow = f"THE HUNT BRIEF  /  {state_label}  /  HUNT {hunt['huntNumber']}"
+    eyebrow = f"{series_label.upper()}  /  {state_label}  /  HUNT {hunt['huntNumber']}"
     draw.text((72, 82), eyebrow, font=eyebrow_font, fill=(220, 186, 119, 255))
 
     title = f"{hunt['huntName']}\n{hunt['species']}"
@@ -453,6 +454,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state", choices=STATE_FILES, default="utah")
     parser.add_argument("--hunt-number", default="DB1001")
     parser.add_argument("--hunt-name")
+    parser.add_argument("--series-label", default="THE HUNT BRIEF")
     parser.add_argument(
         "--output",
         default="public/images/journal/db1001-paunsaugunt-archery-2026.png",
@@ -467,7 +469,14 @@ def main() -> None:
     output = Path(args.output)
     if not output.is_absolute():
         output = ROOT / output
-    create_card(args.state, hunt, features, source_label, output)
+    create_card(
+        args.state,
+        hunt,
+        features,
+        source_label,
+        args.series_label,
+        output,
+    )
     print(f"Created {output} ({WIDTH}x{HEIGHT}) from {len(features)} boundary feature(s).")
 
 
