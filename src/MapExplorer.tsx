@@ -32,6 +32,7 @@ export type MapHunt = {
   huntNumber: string
   huntName: string
   species: string
+  planningYear?: number | null
   mapUnitIds?: string[]
   harvest: { successRate: number } | null
   odds: {
@@ -95,7 +96,13 @@ export function MapExplorer({
   const [loadError, setLoadError] = useState(false)
   const [metric, setMetric] = useState<MetricMode>('harvest')
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const dataPath = boundaryDataPath(plannerState, species, category)
+  const boundaryPlanningYear = mostCommonPlanningYear(hunts)
+  const dataPath = boundaryDataPath(
+    plannerState,
+    species,
+    category,
+    boundaryPlanningYear,
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -107,7 +114,7 @@ export function MapExplorer({
     }
     setLoading(true)
     setLoadError(false)
-    fetch(dataPath)
+    fetch(dataPath, { cache: 'no-store' })
       .then((response) => {
         if (!response.ok) throw new Error(`Boundary data ${response.status}`)
         return response.json() as Promise<BoundaryData>
@@ -274,10 +281,15 @@ export function MapExplorer({
   )
 }
 
-export function boundaryDataPath(state: PlannerState, species: string, category: string) {
+export function boundaryDataPath(
+  state: PlannerState,
+  species: string,
+  category: string,
+  planningYear: number | null = null,
+) {
   if (state === 'utah') {
     return species === 'Elk' && category === 'antlerless'
-      ? '/data/boundaries/utah-antlerless.json'
+      ? `/data/boundaries/utah-antlerless-${planningYear ?? 2026}.json`
       : '/data/boundaries/utah.json'
   }
   if (state === 'colorado') return '/data/boundaries/colorado.json'
@@ -300,6 +312,17 @@ export function boundaryDataPath(state: PlannerState, species: string, category:
       : null
   }
   return null
+}
+
+function mostCommonPlanningYear(hunts: MapHunt[]) {
+  const counts = new Map<number, number>()
+  for (const hunt of hunts) {
+    if (!hunt.planningYear) continue
+    counts.set(hunt.planningYear, (counts.get(hunt.planningYear) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort(([yearA, countA], [yearB, countB]) => countB - countA || yearB - yearA)[0]?.[0]
+    ?? null
 }
 
 export function featureMatchesHunt(feature: BoundaryFeature, hunt: MapHunt) {

@@ -25,6 +25,7 @@ async function main() {
 
   const utahAntlerlessData = await fetchUtahAntlerlessBoundaryData()
   await writeBoundaryData('utah-antlerless.json', utahAntlerlessData)
+  await writeBoundaryData(`utah-antlerless-${utahAntlerlessData.year}.json`, utahAntlerlessData)
 
   const utahHuntRows = await fetchAttributes(`${sources.utah}/1`, '1=1', '*')
   const huntsByBoundary = new Map()
