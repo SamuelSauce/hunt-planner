@@ -10,9 +10,11 @@ const dataDir = path.join(rootDir, 'src', 'data')
 
 const WILDLIFE_BASE = 'https://wildlife.utah.gov'
 const HUNT_PLANNER_BASE = 'https://dwrapps.utah.gov/huntboundary'
+const UTAH_DRAWS_BASE = 'https://www.utahdraws.com/internetsales'
 
 const oddsPageUrl = `${WILDLIFE_BASE}/biggame/odds`
 const harvestPageUrl = `${WILDLIFE_BASE}/biggame/reports`
+const interactiveOddsUrl = `${UTAH_DRAWS_BASE}/home/drawodds`
 
 const pdfSources = {
   limitedOdds2025: {
@@ -65,10 +67,11 @@ async function main() {
     ),
   )
 
-  const [oddsHtml, harvestHtml, setup] = await Promise.all([
+  const [oddsHtml, harvestHtml, setup, interactiveAntlerlessOdds] = await Promise.all([
     fetchText(oddsPageUrl),
     fetchText(harvestPageUrl),
     fetchJson(`${HUNT_PLANNER_BASE}/HaSetup`),
+    fetchInteractiveAntlerlessElkOdds(),
   ])
 
   const reports = [
@@ -100,13 +103,15 @@ async function main() {
       path.join(sourcePdfDir, pdfSources.generalBuckDeerOdds2025.localName),
       pdfSources.generalBuckDeerOdds2025,
     ),
+    ...parseInteractiveAntlerlessOdds(interactiveAntlerlessOdds),
   ]
 
   const hunts = mergeHunts(currentHunts, harvestRecords, oddsRecords)
   const data = {
     generatedAt: new Date().toISOString(),
     notices: [
-      'UDWR draw odds reports are historical, informational, and reflect first-choice selections only.',
+      'UDWR draw odds are historical, informational, and reflect first-choice selections only.',
+      'Current antlerless elk draw odds come from the Utah Draw System interactive report.',
       'Current season dates and permit quotas come from the UDWR Hunt Planner JSON endpoints.',
       'Harvest statistics are the latest parsed PDF reports included in this importer.',
     ],
@@ -115,7 +120,7 @@ async function main() {
       harvestReports: harvestPageUrl,
       huntPlanner: 'https://hunt.utah.gov/',
       huntPlannerJsonBase: HUNT_PLANNER_BASE,
-      newDrawOdds: 'https://utahdraws.com/drawodds',
+      newDrawOdds: interactiveOddsUrl,
     },
     reports,
     hunts,
@@ -145,6 +150,41 @@ async function fetchJson(url) {
     throw new Error(`Endpoint returned Error: ${url}`)
   }
   return JSON.parse(text)
+}
+
+async function fetchInteractiveAntlerlessElkOdds() {
+  const supplement = await fetchJson(`${UTAH_DRAWS_BASE}/Home/DrawOddsSupplementData`)
+  if (supplement.Status !== 0) {
+    throw new Error('Utah Draw System supplement endpoint returned an error.')
+  }
+
+  const availableReports = supplement.Data?.DrawNameAvailableLicenseYears ?? []
+  const report = availableReports
+    .filter(
+      (candidate) =>
+        candidate.DrawName === 'Antlerless' &&
+        candidate.MasterHuntTypeName === 'Antlerless Elk',
+    )
+    .sort((left, right) => right.LicenseYear - left.LicenseYear)[0]
+
+  if (!report) {
+    throw new Error('No Antlerless Elk report is available from the Utah Draw System.')
+  }
+
+  const url = new URL(`${UTAH_DRAWS_BASE}/Home/DrawOddsData`)
+  url.searchParams.set('drawName', report.DrawName)
+  url.searchParams.set('licenseYear', report.LicenseYear)
+  url.searchParams.set('masterHuntTypeID', report.MasterHuntTypeID)
+  const response = await fetchJson(url.href)
+  if (response.Status !== 0 || !Array.isArray(response.Data)) {
+    throw new Error(`Utah Draw System returned invalid ${report.LicenseYear} antlerless elk odds.`)
+  }
+
+  return {
+    year: report.LicenseYear,
+    sourceUrl: interactiveOddsUrl,
+    hunts: response.Data,
+  }
 }
 
 async function downloadIfMissing(url, destination) {
@@ -519,6 +559,103 @@ function parseGeneralBuckDeerOdds(pdfPath, source) {
     })
   }
   return oddsRecords
+}
+
+function parseInteractiveAntlerlessOdds(source) {
+  return source.hunts
+    .filter((hunt) => /^EA\d{4}$/.test(hunt.HuntCode ?? ''))
+    .map((hunt) => {
+      const resident = interactiveOddsSide(hunt.OddsList, 1)
+      const nonresident = interactiveOddsSide(hunt.OddsList, 2)
+      const huntName = normalizeWhitespace(hunt.HuntName)
+      const weapons = [
+        ...new Set(
+          (hunt.SeasonWeapons ?? [])
+            .map((season) => normalizeWhitespace(season.WeaponName))
+            .filter(Boolean),
+        ),
+      ]
+
+      return {
+        huntNumber: hunt.HuntCode,
+        year: source.year,
+        species: 'Elk',
+        gender: 'Antlerless',
+        huntName,
+        huntType: 'Antlerless',
+        category: 'antlerless',
+        weapon: weapons.join(' / '),
+        description: `Antlerless Elk - ${huntName}`,
+        resident,
+        nonresident,
+        sourceUrl: source.sourceUrl,
+      }
+    })
+}
+
+function interactiveOddsSide(oddsList = [], residencyTypeId) {
+  const byPoint = compactOddsRows(
+    oddsList
+      .filter(
+        (row) =>
+          !row.IsYouth &&
+          Number(row.ResidencyTypeID) === residencyTypeId &&
+          Number.isFinite(Number(row.Point ?? row.PreferencePoint)),
+      )
+      .map((row) => {
+        const eligible = numberOrZero(row.ParticipantCount)
+        const totalPermits = numberOrZero(row.SuccessfulCount)
+        const ratio = drawRatio(eligible, totalPermits)
+        return oddsPointRow(
+          row.Point ?? row.PreferencePoint,
+          eligible,
+          numberOrZero(row.SuccessfulByMaxPointRoundCount),
+          numberOrZero(row.SuccessfulByRegularRoundCount),
+          totalPermits,
+          ratio.text,
+        )
+      })
+      .sort((left, right) => left.points - right.points),
+  )
+
+  const totals = byPoint.reduce(
+    (result, row) => ({
+      eligibleApplicants: result.eligibleApplicants + row.eligibleApplicants,
+      bonusPermits: result.bonusPermits + row.bonusPermits,
+      regularPermits: result.regularPermits + row.regularPermits,
+      totalPermits: result.totalPermits + row.totalPermits,
+    }),
+    {
+      eligibleApplicants: 0,
+      bonusPermits: 0,
+      regularPermits: 0,
+      totalPermits: 0,
+    },
+  )
+  const ratio = drawRatio(totals.eligibleApplicants, totals.totalPermits)
+
+  return {
+    totals: oddsTotals(
+      totals.eligibleApplicants,
+      totals.bonusPermits,
+      totals.regularPermits,
+      totals.totalPermits,
+      ratio.text,
+    ),
+    byPoint,
+    summary: summarizeOdds(byPoint),
+  }
+}
+
+function drawRatio(applicants, permits) {
+  if (!permits) {
+    return { text: 'N/A', value: null }
+  }
+  const value = applicants / permits
+  return {
+    text: `1 in ${value.toFixed(1)}`,
+    value,
+  }
 }
 
 function mergeHunts(currentHunts, harvestRecords, oddsRecords) {

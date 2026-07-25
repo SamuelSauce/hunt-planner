@@ -121,6 +121,7 @@
 .map-explorer {
   display: grid;
   grid-area: map;
+  align-content: start;
   gap: 12px;
   min-width: 0;
   padding: 14px;
@@ -184,14 +185,16 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 410px);
   gap: 12px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .map-canvas {
   display: grid;
   position: relative;
+  height: 26.5vw;
   min-width: 0;
   min-height: 390px;
+  max-height: 540px;
   overflow: hidden;
   background: #f7faf8;
   border: 1px solid #e1e9e2;
@@ -227,6 +230,10 @@
   outline: none;
   stroke: #163b55;
   stroke-width: 2.4;
+}
+
+.map-active-boundaries path.primary-hover {
+  stroke-width: 3;
 }
 
 .map-active-boundaries path.selected {
@@ -283,6 +290,115 @@
 
 .map-preview-card {
   min-width: 0;
+}
+
+.map-overlap-picker {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  background: #f4f8f5;
+  border: 1px solid #cad8cc;
+  border-radius: 7px;
+}
+
+.map-overlap-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.map-overlap-heading strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.map-overlap-heading span,
+.map-overlap-area-heading small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.map-overlap-list {
+  display: grid;
+  gap: 7px;
+  max-height: 190px;
+  overflow: auto;
+}
+
+.map-overlap-area {
+  display: grid;
+  gap: 4px;
+}
+
+.map-overlap-area + .map-overlap-area {
+  padding-top: 7px;
+  border-top: 1px solid #dbe5dc;
+}
+
+.map-overlap-area-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.map-overlap-area-heading span {
+  color: #395146;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.map-overlap-area-heading small {
+  flex: 0 0 auto;
+}
+
+.map-overlap-hunts {
+  display: grid;
+  gap: 3px;
+}
+
+.map-overlap-hunts button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 8px;
+  text-align: left;
+  color: #395146;
+  background: #fff;
+  border: 1px solid #d7e1d8;
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.map-overlap-hunts button strong {
+  color: #163b55;
+  font-size: 0.72rem;
+}
+
+.map-overlap-hunts button span {
+  overflow: hidden;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-overlap-hunts button:hover,
+.map-overlap-hunts button:focus-visible {
+  border-color: #8ea88f;
+  outline: none;
+}
+
+.map-overlap-hunts button.active {
+  color: #fff;
+  background: #244735;
+  border-color: #244735;
+}
+
+.map-overlap-hunts button.active strong {
+  color: #fff;
 }
 
 .map-preview-card .hunt-card {
