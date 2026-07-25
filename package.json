@@ -18,6 +18,8 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "seo:check": "node scripts/check-static-output.mjs",
     "sites:prepare": "node scripts/prepare-sites-build.mjs",
+    "test:scouting": "node --experimental-strip-types --test test/scouting-model.test.ts worker/scouting.test.js",
+    "test:functions": "npm --prefix functions test",
     "lint": "eslint .",
     "preview": "vite preview"
   },

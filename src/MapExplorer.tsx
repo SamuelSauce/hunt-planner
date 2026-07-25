@@ -115,6 +115,7 @@ export function MapExplorer({
 
   useEffect(() => {
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear prior pointer state when the boundary source changes.
     setHoveredIds([])
     setOverlapIds([])
     if (!dataPath) {
@@ -378,6 +379,7 @@ export function MapExplorer({
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- Shared pure map helper.
 export function boundaryDataPath(
   state: PlannerState,
   species: string,
@@ -422,6 +424,7 @@ function mostCommonPlanningYear(hunts: MapHunt[]) {
     ?? null
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- Shared pure map helper.
 export function featureMatchesHunt(feature: BoundaryFeature, hunt: MapHunt) {
   if (feature.species && feature.species !== hunt.species) return false
   if (feature.huntNumbers?.includes(hunt.huntNumber)) return true
