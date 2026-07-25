@@ -69,6 +69,7 @@ export type BoundaryData = {
 type FeatureSummary = {
   feature: BoundaryFeature
   hunts: MapHunt[]
+  representativeHunt: MapHunt | null
   value: number | null
 }
 
@@ -140,13 +141,19 @@ export function MapExplorer({
     if (!data) return []
     return data.features.map((feature) => {
       const matchingHunts = hunts.filter((hunt) => featureMatchesHunt(feature, hunt))
+      const mappedSelectedHunt = selectedHunt
+        ? matchingHunts.find((hunt) => hunt.id === selectedHunt.id) ?? null
+        : null
+      const representativeHunt =
+        mappedSelectedHunt ?? bestHunt(matchingHunts, metric, residency) ?? null
       return {
         feature,
         hunts: matchingHunts,
-        value: average(matchingHunts.map((hunt) => metricValue(hunt, metric, residency))),
+        representativeHunt,
+        value: representativeHunt ? metricValue(representativeHunt, metric, residency) : null,
       }
     })
-  }, [data, hunts, metric, residency])
+  }, [data, hunts, metric, residency, selectedHunt])
 
   const matchingSummaries = summaries.filter((summary) => summary.hunts.length > 0)
   const colorRange = metricRange(matchingSummaries.map((summary) => summary.value))
@@ -158,10 +165,7 @@ export function MapExplorer({
     ?? selectedSummary
     ?? matchingSummaries[0]
     ?? null
-  const huntForSummary = (summary: FeatureSummary) =>
-    (selectedHunt && summary.hunts.find((hunt) => hunt.id === selectedHunt.id))
-    ?? bestHunt(summary.hunts, metric, residency)
-  const previewHunt = activeSummary?.hunts[0] ? huntForSummary(activeSummary) : null
+  const previewHunt = activeSummary?.representativeHunt ?? null
   const bounds = useMemo(() => geometryBounds(data?.features ?? []), [data])
   const pathFor = (feature: BoundaryFeature) => geometryPath(feature.geometry, bounds)
 
@@ -228,11 +232,11 @@ export function MapExplorer({
                       onMouseLeave={() => setHoveredId(null)}
                       onFocus={() => setHoveredId(summary.feature.id)}
                       onBlur={() => setHoveredId(null)}
-                      onClick={() => summary.hunts[0] && onSelect(huntForSummary(summary))}
+                      onClick={() => summary.representativeHunt && onSelect(summary.representativeHunt)}
                       onKeyDown={(event) => {
-                        if ((event.key === 'Enter' || event.key === ' ') && summary.hunts[0]) {
+                        if ((event.key === 'Enter' || event.key === ' ') && summary.representativeHunt) {
                           event.preventDefault()
-                          onSelect(huntForSummary(summary))
+                          onSelect(summary.representativeHunt)
                         }
                       }}
                     >
@@ -397,11 +401,6 @@ function visitCoordinates(value: unknown, visitor: (coordinate: [number, number]
     return
   }
   value.forEach((item) => visitCoordinates(item, visitor))
-}
-
-function average(values: Array<number | null>) {
-  const present = values.filter((value): value is number => value !== null && Number.isFinite(value))
-  return present.length > 0 ? present.reduce((sum, value) => sum + value, 0) / present.length : null
 }
 
 function metricRange(values: Array<number | null>): MetricRange {
