@@ -19,7 +19,7 @@ import plannerData from './data/udwr-data.json'
 import coloradoPlannerData from './data/cpw-data.json'
 import idahoPlannerData from './data/idfg-data.json'
 import wyomingPlannerData from './data/wgfd-data.json'
-import { initAnalytics, trackEvent, trackPageView } from './analytics'
+import { initAnalytics, trackEvent } from './analytics'
 import { CommunityBoard } from './community/CommunityBoard'
 import { estimateP50Draw, opportunityScore, type DrawTimeEstimate } from './drawMetrics'
 import { formatMapPin, parseMapPin, type MapPinLocation } from './mapPin'
@@ -345,7 +345,6 @@ function PlannerApp() {
   } | null>(null)
   const huntListRef = useRef<HTMLDivElement | null>(null)
   const hasRenderedInitialSort = useRef(false)
-  const lastTrackedPage = useRef('')
   const activeData = plannerDataByState[plannerState]
   const activeMeta = stateMeta[plannerState]
 
@@ -439,21 +438,7 @@ function PlannerApp() {
       map3dHunt?.id === selectedHunt.id,
       map3dHunt?.id === selectedHunt.id ? map3dPin : null,
     )
-    const path = `${window.location.pathname}${window.location.search}`
-    if (lastTrackedPage.current !== path) {
-      lastTrackedPage.current = path
-      trackPageView(path)
-    }
   }, [category, map3dHunt, map3dPin, plannerState, residency, selectedHunt, species, view, weapon])
-
-  useEffect(() => {
-    if (view === 'planner') return
-    const path = `${window.location.pathname}${window.location.search}`
-    if (lastTrackedPage.current !== path) {
-      lastTrackedPage.current = path
-      trackPageView(path)
-    }
-  }, [view])
 
   useEffect(() => {
     if (!hasRenderedInitialSort.current) {
