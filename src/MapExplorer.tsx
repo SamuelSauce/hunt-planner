@@ -318,6 +318,11 @@ function metricValue(hunt: MapHunt, metric: MetricMode, residency: Residency) {
 
 function bestHunt(hunts: MapHunt[], metric: MetricMode, residency: Residency) {
   return [...hunts].sort((a, b) => {
+    if (metric === 'harvest') {
+      const drawDataDifference =
+        Number(Boolean(b.odds || b.drawProfile)) - Number(Boolean(a.odds || a.drawProfile))
+      if (drawDataDifference !== 0) return drawDataDifference
+    }
     const aValue = metricValue(a, metric, residency)
     const bValue = metricValue(b, metric, residency)
     if (metric === 'draw') return (aValue ?? Infinity) - (bValue ?? Infinity)

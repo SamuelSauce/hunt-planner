@@ -1120,7 +1120,7 @@ function HuntCard({
         ) : hunt.drawProfile ? (
           <DrawProfileSummary profile={hunt.drawProfile} side={drawProfileSide} compact />
         ) : (
-          <OddsChart side={oddsSide} compact />
+          <OddsChart side={oddsSide} missingLabel={missingOddsLabel(hunt)} compact />
         )}
         <div className="hunt-metrics two">
           {hunt.drawOut ? (
@@ -1336,7 +1336,7 @@ function HuntDetail({
             </dl>
           </>
         ) : (
-          <p className="muted">No parsed draw table for this hunt.</p>
+          <p className="muted">{missingOddsDetail(hunt)}</p>
         )}
         {p50Estimate && (
           <dl className="detail-list two-col draw-estimate-list">
@@ -1514,9 +1514,11 @@ type OddsChartHover = {
 
 function OddsChart({
   side,
+  missingLabel = 'No parsed odds',
   compact = false,
 }: {
   side: OddsSide | null
+  missingLabel?: string
   compact?: boolean
 }) {
   const [hovered, setHovered] = useState<OddsChartHover | null>(null)
@@ -1526,7 +1528,7 @@ function OddsChart({
       <div className={`odds-chart ${compact ? 'compact' : ''}`}>
         <div className="odds-chart-head">
           <small>Draw odds</small>
-          <strong>No parsed odds</strong>
+          <strong>{missingLabel}</strong>
         </div>
       </div>
     )
@@ -1713,6 +1715,18 @@ function OddsChart({
       )}
     </div>
   )
+}
+
+function missingOddsLabel(hunt: Hunt) {
+  return hunt.category === 'antlerless' && hunt.planningYear
+    ? `No ${hunt.planningYear} agency draw row`
+    : 'No parsed odds'
+}
+
+function missingOddsDetail(hunt: Hunt) {
+  return hunt.category === 'antlerless' && hunt.planningYear
+    ? `The agency's ${hunt.planningYear} draw results do not list this hunt number.`
+    : 'No parsed draw table for this hunt.'
 }
 
 function compareHunts(
