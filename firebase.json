@@ -51,15 +51,7 @@
     ],
     "rewrites": [
       {
-        "source": "/api/community{,/**}",
-        "function": {
-          "functionId": "communityApiProxy",
-          "region": "us-central1",
-          "pinTag": true
-        }
-      },
-      {
-        "source": "/api/maps{,/**}",
+        "source": "/api/{community,maps}{,/**}",
         "function": {
           "functionId": "communityApiProxy",
           "region": "us-central1",
