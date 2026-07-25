@@ -11,6 +11,7 @@ import {
   Mountain,
   RotateCcw,
   Satellite,
+  Save,
   Share2,
   Sparkles,
   X,
@@ -35,7 +36,35 @@ import {
   type HuntPotentialAnalysis,
   type PotentialZone,
 } from './huntPotentialAnalysis'
+import {
+  firebaseAuthErrorMessage,
+  signInWithGoogle,
+  signOutOfFirebase,
+  subscribeToFirebaseAuth,
+} from './firebase'
 import { normalizeMapPin, type MapPinLocation } from './mapPin'
+import {
+  ScoutingPanel,
+  type ScoutPersistenceStatus,
+} from './scouting/ScoutingPanel'
+import { ScoutShareModal } from './scouting/ScoutShareModal'
+import { loadScoutWorkspace, saveScoutWorkspace } from './scouting/api'
+import {
+  clearGuestScoutDraft,
+  loadGuestScoutDraft,
+  saveGuestScoutDraft,
+} from './scouting/draftStore'
+import {
+  DEFAULT_SCOUT_FILTERS,
+  GUEST_PIN_LIMIT,
+  createScoutLayer,
+  createScoutPin,
+  createScoutWorkspace,
+  mergeScoutWorkspaces,
+  scoutPinsGeoJson,
+  type ScoutFilters,
+  type ScoutPinDraft,
+} from './scouting/model'
 
 type Basemap = 'satellite' | 'topographic'
 type LocationStatus = 'idle' | 'locating' | 'error'
@@ -47,11 +76,17 @@ const SATELLITE_TRANSPORTATION_LAYER = 'satellite-transportation-layer'
 const SATELLITE_PLACES_LAYER = 'satellite-places-layer'
 const TOPOGRAPHIC_LAYER = 'topographic-layer'
 const TERRAIN_SOURCE = 'terrain-dem'
+const HILLSHADE_LAYER = 'terrain-hillshade'
 const POTENTIAL_SOURCE = 'ai-potential-source'
 const POTENTIAL_HOTSPOT_SOURCE = 'ai-potential-hotspot-source'
 const POTENTIAL_HEAT_LAYER = 'ai-potential-heat'
 const POTENTIAL_HOTSPOT_LAYER = 'ai-potential-hotspots'
 const POTENTIAL_LABEL_LAYER = 'ai-potential-labels'
+const SCOUT_SOURCE = 'scout-pins-source'
+const SCOUT_CLUSTER_LAYER = 'scout-pin-clusters'
+const SCOUT_CLUSTER_COUNT_LAYER = 'scout-pin-cluster-count'
+const SCOUT_PIN_LAYER = 'scout-pins'
+const SCOUT_PIN_LABEL_LAYER = 'scout-pin-labels'
 
 const stateCamera: Record<PlannerState, { center: [number, number]; zoom: number }> = {
   utah: { center: [-111.65, 39.35], zoom: 6.6 },
@@ -84,7 +119,9 @@ export function Hunt3DMap({
   const pinMarkerRef = useRef<maplibregl.Marker | null>(null)
   const pinPopupRef = useRef<maplibregl.Popup | null>(null)
   const pinRef = useRef<MapPinLocation | null>(pin)
+  const onPinChangeRef = useRef(onPinChange)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const savePinButtonRef = useRef<HTMLButtonElement | null>(null)
   const resetViewRef = useRef<() => void>(() => undefined)
   const [boundaryFeatures, setBoundaryFeatures] = useState<BoundaryFeature[] | null>(null)
   const [boundaryError, setBoundaryError] = useState(false)
@@ -92,6 +129,7 @@ export function Hunt3DMap({
   const [mapError, setMapError] = useState(false)
   const [basemap, setBasemap] = useState<Basemap>('satellite')
   const [terrainVisible, setTerrainVisible] = useState(true)
+  const [reliefVisible, setReliefVisible] = useState(true)
   const [landStatusVisible, setLandStatusVisible] = useState(false)
   const [huntBoundaryVisible, setHuntBoundaryVisible] = useState(true)
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle')
@@ -101,25 +139,150 @@ export function Hunt3DMap({
   const [potentialAnalysis, setPotentialAnalysis] = useState<HuntPotentialAnalysis | null>(null)
   const [pinPopupContainer] = useState(() => document.createElement('div'))
   const plannerState = hunt.state ?? 'utah'
+  const [authStatus, setAuthStatus] = useState<'loading' | 'signed-in' | 'signed-out'>('loading')
+  const [authMessage, setAuthMessage] = useState('')
+  const [persistenceStatus, setPersistenceStatus] =
+    useState<ScoutPersistenceStatus>('loading')
+  const [workspaceStorage, setWorkspaceStorage] = useState<'guest' | 'remote'>('guest')
+  const [filters, setFilters] = useState<ScoutFilters>(DEFAULT_SCOUT_FILTERS)
+  const [workspace, setWorkspace] = useState(() =>
+    createScoutWorkspace(plannerState, hunt.huntNumber, hunt.huntName),
+  )
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
+  const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
+  const [pinEditorOpen, setPinEditorOpen] = useState(false)
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const lastPersistedWorkspaceRef = useRef('')
   const dataPath = boundaryDataPath(plannerState, hunt.species, hunt.category)
+  const selectedPin = workspace.pins.find((candidate) => candidate.id === selectedPinId) ?? null
+
+  useEffect(() => {
+    onPinChangeRef.current = onPinChange
+  }, [onPinChange])
+
+  useEffect(() => subscribeToFirebaseAuth(
+    (signedIn) => {
+      setAuthStatus(signedIn ? 'signed-in' : 'signed-out')
+      setAuthMessage('')
+    },
+    (error) => {
+      setAuthStatus('signed-out')
+      setAuthMessage(firebaseAuthErrorMessage(error))
+    },
+  ), [])
+
+  useEffect(() => {
+    if (authStatus === 'loading') return
+    let cancelled = false
+
+    const hydrateWorkspace = async () => {
+      setWorkspaceLoaded(false)
+      setPersistenceStatus('loading')
+      setSelectedPinId(null)
+      const guestDraft = await loadGuestScoutDraft(plannerState, hunt.huntNumber)
+      if (cancelled) return
+
+      if (authStatus === 'signed-out') {
+        const next = guestDraft ??
+          createScoutWorkspace(plannerState, hunt.huntNumber, hunt.huntName)
+        lastPersistedWorkspaceRef.current = JSON.stringify(next)
+        setWorkspace(next)
+        setWorkspaceStorage('guest')
+        setPersistenceStatus('local')
+        setWorkspaceLoaded(true)
+        return
+      }
+
+      try {
+        const remote = await loadScoutWorkspace(plannerState, hunt.huntNumber)
+        const fallback = createScoutWorkspace(plannerState, hunt.huntNumber, hunt.huntName)
+        const hasGuestWork = guestDraft !== null && guestDraft.pins.length > 0
+        const next = hasGuestWork
+          ? mergeScoutWorkspaces(remote, guestDraft)
+          : remote ?? fallback
+        if (hasGuestWork) {
+          await saveScoutWorkspace(next)
+          await clearGuestScoutDraft(plannerState, hunt.huntNumber)
+        }
+        if (cancelled) return
+        lastPersistedWorkspaceRef.current = JSON.stringify(next)
+        setWorkspace(next)
+        setWorkspaceStorage('remote')
+        setPersistenceStatus('saved')
+      } catch {
+        if (cancelled) return
+        const next = guestDraft ??
+          createScoutWorkspace(plannerState, hunt.huntNumber, hunt.huntName)
+        setWorkspace(next)
+        setWorkspaceStorage('guest')
+        setPersistenceStatus('error')
+      }
+      setWorkspaceLoaded(true)
+    }
+
+    void hydrateWorkspace()
+    return () => {
+      cancelled = true
+    }
+  }, [authStatus, hunt.huntName, hunt.huntNumber, plannerState])
+
+  useEffect(() => {
+    if (!workspaceLoaded) return
+    const serialized = JSON.stringify(workspace)
+    if (serialized === lastPersistedWorkspaceRef.current) return
+
+    const syncsRemotely = workspaceStorage === 'remote'
+    setPersistenceStatus(syncsRemotely ? 'saving' : authStatus === 'signed-in' ? 'error' : 'local')
+    const timer = window.setTimeout(() => {
+      const persist = syncsRemotely
+        ? saveScoutWorkspace(workspace)
+        : saveGuestScoutDraft(workspace).then(() => workspace)
+      void persist
+        .then(() => {
+          lastPersistedWorkspaceRef.current = serialized
+          setPersistenceStatus(
+            syncsRemotely ? 'saved' : authStatus === 'signed-in' ? 'error' : 'local',
+          )
+        })
+        .catch(async () => {
+          if (syncsRemotely) await saveGuestScoutDraft(workspace)
+          setPersistenceStatus('error')
+        })
+    }, syncsRemotely ? 650 : 180)
+
+    return () => window.clearTimeout(timer)
+  }, [authStatus, workspace, workspaceLoaded, workspaceStorage])
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     closeButtonRef.current?.focus()
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
     return () => {
       document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [onClose])
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (shareModalOpen) {
+        setShareModalOpen(false)
+        return
+      }
+      if (pinEditorOpen) {
+        setPinEditorOpen(false)
+        window.requestAnimationFrame(() => savePinButtonRef.current?.focus())
+        return
+      }
+      onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose, pinEditorOpen, shareModalOpen])
 
   useEffect(() => {
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset stale boundary state before loading the next hunt.
     setBoundaryFeatures(null)
     setBoundaryError(false)
 
@@ -171,6 +334,7 @@ export function Hunt3DMap({
         attributionControl: false,
       })
     } catch {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Report synchronous MapLibre construction failures.
       setMapError(true)
       return
     }
@@ -193,6 +357,7 @@ export function Hunt3DMap({
       'bottom-right',
     )
     const removeShiftPivotGesture = installShiftPivotGesture(map)
+    let removeScoutInteractions: () => void = () => undefined
 
     const fitToHunt = () => {
       const bounds = featureBounds(boundaryFeatures)
@@ -264,6 +429,13 @@ export function Hunt3DMap({
           SATELLITE_TRANSPORTATION_LAYER,
         )
       }
+      addScoutPinLayers(map)
+      removeScoutInteractions = installScoutPinInteractions(map, (pinId) => {
+        pinRef.current = null
+        onPinChangeRef.current(null)
+        setSelectedPinId(pinId)
+        setPinEditorOpen(true)
+      })
       const sharedPin = pinRef.current
       if (sharedPin) {
         map.easeTo({
@@ -281,6 +453,7 @@ export function Hunt3DMap({
 
     return () => {
       removeShiftPivotGesture()
+      removeScoutInteractions()
       pinMarkerRef.current = null
       pinPopupRef.current = null
       resetViewRef.current = () => undefined
@@ -345,9 +518,18 @@ export function Hunt3DMap({
     if (!map || !mapReady) return
     return installLongPressPinGesture(map, (nextPin) => {
       pinRef.current = nextPin
+      setSelectedPinId(null)
+      setPinEditorOpen(false)
       onPinChange(nextPin)
     })
   }, [mapReady, onPinChange])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    const source = map.getSource(SCOUT_SOURCE) as GeoJSONSource | undefined
+    source?.setData(scoutPinsGeoJson(workspace, filters))
+  }, [filters, mapReady, workspace])
 
   useEffect(() => {
     const map = mapRef.current
@@ -364,6 +546,12 @@ export function Hunt3DMap({
     map.setTerrain(terrainVisible ? { source: TERRAIN_SOURCE, exaggeration: 1.25 } : null)
     map.easeTo({ pitch: terrainVisible ? 62 : 0, duration: 500 })
   }, [mapReady, terrainVisible])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady) return
+    map.setLayoutProperty(HILLSHADE_LAYER, 'visibility', reliefVisible ? 'visible' : 'none')
+  }, [mapReady, reliefVisible])
 
   useEffect(() => {
     const map = mapRef.current
@@ -466,8 +654,120 @@ export function Hunt3DMap({
   }
 
   const clearPin = () => {
+    setPinEditorOpen(false)
     pinRef.current = null
     onPinChange(null)
+  }
+
+  const closePinEditor = () => {
+    setPinEditorOpen(false)
+    window.requestAnimationFrame(() => savePinButtonRef.current?.focus())
+  }
+
+  const updateWorkspace = (
+    update: (current: typeof workspace) => typeof workspace,
+  ) => {
+    setWorkspace((current) => {
+      const next = update(current)
+      return next === current ? current : { ...next, updatedAt: Date.now() }
+    })
+  }
+
+  const handleAddLayer = () => {
+    if (authStatus !== 'signed-in') return
+    updateWorkspace((current) => ({
+      ...current,
+      layers: [
+        ...current.layers,
+        createScoutLayer(`Layer ${current.layers.length + 1}`, current.layers.length),
+      ],
+    }))
+  }
+
+  const handleRenameLayer = (layerId: string, name: string) => {
+    if (authStatus !== 'signed-in') return
+    updateWorkspace((current) => ({
+      ...current,
+      layers: current.layers.map((layer) =>
+        layer.id === layerId
+          ? { ...layer, name: name.slice(0, 48), updatedAt: Date.now() }
+          : layer,
+      ),
+    }))
+  }
+
+  const handleToggleLayer = (layerId: string) => {
+    updateWorkspace((current) => ({
+      ...current,
+      layers: current.layers.map((layer) =>
+        layer.id === layerId
+          ? { ...layer, visible: !layer.visible, updatedAt: Date.now() }
+          : layer,
+      ),
+    }))
+  }
+
+  const handleDeleteLayer = (layerId: string) => {
+    if (authStatus !== 'signed-in') return
+    updateWorkspace((current) => {
+      if (
+        current.layers.length <= 1 ||
+        current.pins.some((candidate) => candidate.layerId === layerId)
+      ) return current
+      return {
+        ...current,
+        layers: current.layers
+          .filter((layer) => layer.id !== layerId)
+          .map((layer, index) => ({ ...layer, sortOrder: index })),
+      }
+    })
+  }
+
+  const handleSavePin = (draft: ScoutPinDraft, existingId: string | null) => {
+    const now = Date.now()
+    const newPin = existingId ? null : createScoutPin(draft, now)
+    updateWorkspace((current) => {
+      if (!existingId && authStatus !== 'signed-in' && current.pins.length >= GUEST_PIN_LIMIT) {
+        return current
+      }
+      return {
+        ...current,
+        pins: existingId
+          ? current.pins.map((candidate) =>
+            candidate.id === existingId
+              ? {
+                ...candidate,
+                ...draft,
+                title: draft.title.trim().slice(0, 80),
+                notes: draft.notes.trim().slice(0, 2_000),
+                updatedAt: now,
+              }
+              : candidate,
+          )
+          : [...current.pins, newPin as NonNullable<typeof newPin>],
+      }
+    })
+    clearPin()
+    setSelectedPinId(existingId ?? newPin?.id ?? null)
+  }
+
+  const handleDeletePin = (pinId: string) => {
+    updateWorkspace((current) => ({
+      ...current,
+      pins: current.pins.filter((candidate) => candidate.id !== pinId),
+    }))
+    setPinEditorOpen(false)
+    setSelectedPinId(null)
+  }
+
+  const handleSignIn = () => {
+    setAuthMessage('')
+    void signInWithGoogle().catch((error) => setAuthMessage(firebaseAuthErrorMessage(error)))
+  }
+
+  const handleSignOut = () => {
+    setAuthMessage('')
+    void signOutOfFirebase().catch(() => setAuthMessage('Sign out could not be completed.'))
   }
 
   return (
@@ -578,6 +878,13 @@ export function Hunt3DMap({
               onChange={setTerrainVisible}
             />
             <LayerToggle
+              icon={<Mountain size={17} aria-hidden="true" />}
+              label="Shaded relief"
+              detail="Terrain shape over any basemap"
+              checked={reliefVisible}
+              onChange={setReliefVisible}
+            />
+            <LayerToggle
               icon={<Crosshair size={17} aria-hidden="true" />}
               label="Hunt boundary"
               detail={boundaryFeatures?.length ? `${boundaryFeatures.length} mapped area${boundaryFeatures.length === 1 ? '' : 's'}` : 'No matching polygon'}
@@ -623,13 +930,33 @@ export function Hunt3DMap({
             />
           )}
 
-          <div className="hunt-3d-pin-hint">
-            <MapPin size={17} aria-hidden="true" />
-            <span>
-              <strong>Drop a pin</strong>
-              <small>Press and hold anywhere on the map</small>
-            </span>
-          </div>
+          <ScoutingPanel
+            workspace={workspace}
+            filters={filters}
+            authStatus={authStatus}
+            persistenceStatus={persistenceStatus}
+            editorOpen={pinEditorOpen}
+            draftLocation={pin}
+            selectedPin={selectedPin}
+            species={hunt.species}
+            onFiltersChange={setFilters}
+            onAddLayer={handleAddLayer}
+            onRenameLayer={handleRenameLayer}
+            onToggleLayer={handleToggleLayer}
+            onDeleteLayer={handleDeleteLayer}
+            onSavePin={handleSavePin}
+            onDeletePin={handleDeletePin}
+            onOpenEditor={() => setPinEditorOpen(true)}
+            onCloseEditor={closePinEditor}
+            onShareLayers={() => {
+              setPinEditorOpen(false)
+              setShareModalOpen(true)
+            }}
+            onSharePin={onShare}
+            onSignIn={handleSignIn}
+            onSignOut={handleSignOut}
+          />
+          {authMessage && <p className="scout-auth-error" role="alert">{authMessage}</p>}
 
           <div className="hunt-3d-tools">
             <button type="button" onClick={() => resetViewRef.current()} disabled={!mapReady}>
@@ -649,29 +976,49 @@ export function Hunt3DMap({
         </div>
       </aside>
 
+      <ScoutShareModal
+        key={shareModalOpen ? `open-${workspace.updatedAt}` : 'closed'}
+        open={shareModalOpen}
+        workspace={workspace}
+        authStatus={authStatus}
+        onClose={() => setShareModalOpen(false)}
+        onSignIn={handleSignIn}
+      />
+
       {pin && createPortal(
         <div className="hunt-3d-pin-bubble" aria-live="polite">
-          <div>
+          <div className="hunt-3d-pin-header">
             <span><MapPin size={14} aria-hidden="true" /> Dropped pin</span>
             <button type="button" onClick={clearPin} aria-label="Remove dropped pin">
               <X size={14} aria-hidden="true" />
             </button>
           </div>
           <small>{pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}</small>
-          <button
-            className={shareStatus === 'copied' || shareStatus === 'shared' ? 'shared' : ''}
-            type="button"
-            onClick={() => onShare(pin)}
-          >
-            <Share2 size={15} aria-hidden="true" />
-            {shareStatus === 'shared'
-              ? 'Shared'
-              : shareStatus === 'copied'
-                ? 'Link copied'
-                : shareStatus === 'error'
-                  ? 'Try sharing again'
-                  : 'Share this pin'}
-          </button>
+          <div className="hunt-3d-pin-actions">
+            <button
+              ref={savePinButtonRef}
+              className="save"
+              type="button"
+              onClick={() => setPinEditorOpen(true)}
+            >
+              <Save size={15} aria-hidden="true" />
+              Save this pin
+            </button>
+            <button
+              className={`share ${shareStatus === 'copied' || shareStatus === 'shared' ? 'shared' : ''}`}
+              type="button"
+              onClick={() => onShare(pin)}
+            >
+              <Share2 size={15} aria-hidden="true" />
+              {shareStatus === 'shared'
+                ? 'Shared'
+                : shareStatus === 'copied'
+                  ? 'Link copied'
+                  : shareStatus === 'error'
+                    ? 'Try again'
+                    : 'Share this pin'}
+            </button>
+          </div>
         </div>,
         pinPopupContainer,
       )}
@@ -884,6 +1231,18 @@ function mapStyle(): StyleSpecification {
         layout: { visibility: 'none' },
       },
       {
+        id: HILLSHADE_LAYER,
+        type: 'hillshade',
+        source: TERRAIN_SOURCE,
+        paint: {
+          'hillshade-exaggeration': 0.38,
+          'hillshade-highlight-color': 'rgba(255, 247, 220, 0.72)',
+          'hillshade-shadow-color': 'rgba(24, 35, 29, 0.82)',
+          'hillshade-accent-color': 'rgba(68, 78, 61, 0.62)',
+          'hillshade-illumination-direction': 325,
+        },
+      },
+      {
         id: LAND_STATUS_LAYER,
         type: 'raster',
         source: 'land-status',
@@ -915,6 +1274,148 @@ function mapStyle(): StyleSpecification {
       source: TERRAIN_SOURCE,
       exaggeration: 1.25,
     },
+  }
+}
+
+function addScoutPinLayers(map: MapLibreMap) {
+  map.addSource(SCOUT_SOURCE, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+    cluster: true,
+    clusterMaxZoom: 13,
+    clusterRadius: 46,
+  })
+
+  map.addLayer({
+    id: SCOUT_CLUSTER_LAYER,
+    type: 'circle',
+    source: SCOUT_SOURCE,
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-radius': [
+        'step',
+        ['get', 'point_count'],
+        18,
+        25, 22,
+        100, 27,
+      ],
+      'circle-color': '#17352b',
+      'circle-opacity': 0.94,
+      'circle-stroke-color': '#f7edcf',
+      'circle-stroke-width': 2.5,
+    },
+  })
+
+  map.addLayer({
+    id: SCOUT_CLUSTER_COUNT_LAYER,
+    type: 'symbol',
+    source: SCOUT_SOURCE,
+    filter: ['has', 'point_count'],
+    layout: {
+      'text-field': ['get', 'point_count_abbreviated'],
+      'text-size': 12,
+      'text-font': ['Open Sans Bold'],
+      'text-allow-overlap': true,
+    },
+    paint: {
+      'text-color': '#ffffff',
+    },
+  })
+
+  map.addLayer({
+    id: SCOUT_PIN_LAYER,
+    type: 'circle',
+    source: SCOUT_SOURCE,
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-radius': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        6, 7,
+        12, 13,
+      ],
+      'circle-color': ['get', 'color'],
+      'circle-opacity': 0.96,
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 2.5,
+      'circle-pitch-alignment': 'viewport',
+    },
+  })
+
+  map.addLayer({
+    id: SCOUT_PIN_LABEL_LAYER,
+    type: 'symbol',
+    source: SCOUT_SOURCE,
+    filter: ['!', ['has', 'point_count']],
+    layout: {
+      'text-field': ['get', 'glyph'],
+      'text-size': 11,
+      'text-font': ['Open Sans Bold'],
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+    },
+    paint: {
+      'text-color': '#ffffff',
+      'text-halo-color': 'rgba(18, 37, 31, 0.62)',
+      'text-halo-width': 0.7,
+    },
+  })
+}
+
+function installScoutPinInteractions(
+  map: MapLibreMap,
+  onSelectPin: (pinId: string) => void,
+) {
+  const handlePinClick = (event: maplibregl.MapLayerMouseEvent) => {
+    const feature = event.features?.[0]
+    const id = feature?.properties?.id
+    if (!feature || typeof id !== 'string') return
+    onSelectPin(id)
+    if (feature.geometry.type === 'Point') {
+      const coordinates = feature.geometry.coordinates
+      map.easeTo({
+        center: [coordinates[0], coordinates[1]],
+        zoom: Math.max(map.getZoom(), 13.5),
+        duration: 500,
+      })
+    }
+  }
+
+  const handleClusterClick = async (event: maplibregl.MapLayerMouseEvent) => {
+    const feature = event.features?.[0]
+    const clusterId = feature?.properties?.cluster_id
+    if (typeof clusterId !== 'number' || feature?.geometry.type !== 'Point') return
+    const source = map.getSource(SCOUT_SOURCE) as GeoJSONSource
+    const zoom = await source.getClusterExpansionZoom(clusterId)
+    map.easeTo({
+      center: [feature.geometry.coordinates[0], feature.geometry.coordinates[1]],
+      zoom,
+      duration: 500,
+    })
+  }
+
+  const showPointer = () => {
+    map.getCanvas().style.cursor = 'pointer'
+  }
+  const hidePointer = () => {
+    map.getCanvas().style.cursor = ''
+  }
+
+  map.on('click', SCOUT_PIN_LAYER, handlePinClick)
+  map.on('click', SCOUT_CLUSTER_LAYER, handleClusterClick)
+  map.on('mouseenter', SCOUT_PIN_LAYER, showPointer)
+  map.on('mouseleave', SCOUT_PIN_LAYER, hidePointer)
+  map.on('mouseenter', SCOUT_CLUSTER_LAYER, showPointer)
+  map.on('mouseleave', SCOUT_CLUSTER_LAYER, hidePointer)
+
+  return () => {
+    map.off('click', SCOUT_PIN_LAYER, handlePinClick)
+    map.off('click', SCOUT_CLUSTER_LAYER, handleClusterClick)
+    map.off('mouseenter', SCOUT_PIN_LAYER, showPointer)
+    map.off('mouseleave', SCOUT_PIN_LAYER, hidePointer)
+    map.off('mouseenter', SCOUT_CLUSTER_LAYER, showPointer)
+    map.off('mouseleave', SCOUT_CLUSTER_LAYER, hidePointer)
   }
 }
 

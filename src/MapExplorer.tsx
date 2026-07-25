@@ -99,6 +99,7 @@ export function MapExplorer({
 
   useEffect(() => {
     let cancelled = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear the prior hover when the boundary source changes.
     setHoveredId(null)
     if (!dataPath) {
       setData(null)
@@ -274,6 +275,7 @@ export function MapExplorer({
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- Shared pure map helper.
 export function boundaryDataPath(state: PlannerState, species: string, category: string) {
   if (state === 'utah') return '/data/boundaries/utah.json'
   if (state === 'colorado') return '/data/boundaries/colorado.json'
@@ -298,6 +300,7 @@ export function boundaryDataPath(state: PlannerState, species: string, category:
   return null
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- Shared pure map helper.
 export function featureMatchesHunt(feature: BoundaryFeature, hunt: MapHunt) {
   if (feature.species && feature.species !== hunt.species) return false
   if (feature.huntNumbers?.includes(hunt.huntNumber)) return true

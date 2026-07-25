@@ -38,11 +38,28 @@
             "value": "public,max-age=31536000,immutable"
           }
         ]
+      },
+      {
+        "source": "/scout-map/**",
+        "headers": [
+          {
+            "key": "X-Robots-Tag",
+            "value": "noindex, nofollow, noarchive"
+          }
+        ]
       }
     ],
     "rewrites": [
       {
         "source": "/api/community{,/**}",
+        "function": {
+          "functionId": "communityApiProxy",
+          "region": "us-central1",
+          "pinTag": true
+        }
+      },
+      {
+        "source": "/api/maps{,/**}",
         "function": {
           "functionId": "communityApiProxy",
           "region": "us-central1",
