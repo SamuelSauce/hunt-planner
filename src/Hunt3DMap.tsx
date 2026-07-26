@@ -97,6 +97,7 @@ const SCOUT_CLUSTER_LAYER = 'scout-pin-clusters'
 const SCOUT_CLUSTER_COUNT_LAYER = 'scout-pin-cluster-count'
 const SCOUT_PIN_LAYER = 'scout-pins'
 const SCOUT_PIN_LABEL_LAYER = 'scout-pin-labels'
+const MOBILE_MAP_BREAKPOINT = 840
 const LAND_STATUS_IDENTIFY_URL =
   'https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached_with_PriUnk/MapServer/identify'
 
@@ -105,6 +106,10 @@ const stateCamera: Record<PlannerState, { center: [number, number]; zoom: number
   colorado: { center: [-105.55, 39], zoom: 6.3 },
   idaho: { center: [-114.45, 44.25], zoom: 6.2 },
   wyoming: { center: [-107.55, 43], zoom: 6.2 },
+}
+
+function isMobileMapViewport() {
+  return typeof window !== 'undefined' && window.innerWidth <= MOBILE_MAP_BREAKPOINT
 }
 
 export function Hunt3DMap({
@@ -146,7 +151,7 @@ export function Hunt3DMap({
   const [landStatusVisible, setLandStatusVisible] = useState(false)
   const [huntBoundaryVisible, setHuntBoundaryVisible] = useState(true)
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('idle')
-  const [layersExpanded, setLayersExpanded] = useState(true)
+  const [layersExpanded, setLayersExpanded] = useState(() => !isMobileMapViewport())
   const [potentialVisible, setPotentialVisible] = useState(false)
   const [potentialStatus, setPotentialStatus] = useState<PotentialStatus>('idle')
   const [potentialAnalysis, setPotentialAnalysis] = useState<HuntPotentialAnalysis | null>(null)
@@ -402,6 +407,11 @@ export function Hunt3DMap({
       }),
       'bottom-right',
     )
+    if (isMobileMapViewport()) {
+      map.getContainer()
+        .querySelector('.maplibregl-ctrl-attrib')
+        ?.classList.remove('maplibregl-compact-show')
+    }
     const removeShiftPivotGesture = installShiftPivotGesture(map)
     let removeScoutInteractions: () => void = () => undefined
 
@@ -418,7 +428,7 @@ export function Hunt3DMap({
         else map.easeTo({ ...camera, duration })
         return
       }
-      const compact = window.innerWidth <= 840
+      const compact = isMobileMapViewport()
       map.fitBounds(bounds, {
         padding: compact
           ? { top: 115, right: 30, bottom: 280, left: 30 }
