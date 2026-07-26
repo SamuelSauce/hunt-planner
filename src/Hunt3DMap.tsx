@@ -330,6 +330,9 @@ export function Hunt3DMap({
         zoom: initialCamera.zoom,
         pitch: 62,
         bearing: -24,
+        // Keep the camera exactly where the pointer is released.
+        bearingSnap: 0,
+        dragPan: { maxSpeed: 0 },
         maxPitch: 85,
         attributionControl: false,
       })
