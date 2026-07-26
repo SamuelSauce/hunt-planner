@@ -330,8 +330,9 @@ export function Hunt3DMap({
         zoom: initialCamera.zoom,
         pitch: 62,
         bearing: -24,
-        // Keep the camera exactly where the pointer is released.
+        // Keep the camera's position—including altitude—fixed when an interaction ends.
         bearingSnap: 0,
+        centerClampedToGround: false,
         dragPan: { maxSpeed: 0 },
         maxPitch: 85,
         attributionControl: false,
