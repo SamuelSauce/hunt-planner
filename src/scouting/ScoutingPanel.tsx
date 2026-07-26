@@ -303,7 +303,7 @@ export function ScoutingPanel({
       <div className="scout-layer-library">
         <section className="scout-layer-group" aria-label={`Layers for ${activeHunt.huntNumber}`}>
           <div className="scout-layer-group-heading">
-            <span>Current hunt</span>
+            <span>Current layers</span>
             <small>{activeHunt.huntNumber}</small>
           </div>
           <div className="scout-layer-list">
@@ -314,17 +314,17 @@ export function ScoutingPanel({
             type="button"
             onClick={onAddLayer}
             disabled={!isSignedIn}
-            title={isSignedIn ? 'Add a custom layer for this hunt' : 'Sign in to create more layers'}
+            title={isSignedIn ? 'Create a new layer' : 'Sign in to create more layers'}
           >
             <Plus size={14} aria-hidden="true" />
-            {isSignedIn ? 'Add layer for this hunt' : 'Sign in for custom layers'}
+            {isSignedIn ? 'New layer' : 'Sign in for custom layers'}
           </button>
         </section>
 
         {otherHuntLayers.length > 0 && (
           <details className="scout-other-layers">
             <summary>
-              <span>Other hunts</span>
+              <span>Other layers</span>
               <small>{otherHuntLayers.length} layer{otherHuntLayers.length === 1 ? '' : 's'}</small>
               <ChevronDown size={14} aria-hidden="true" />
             </summary>
@@ -333,7 +333,7 @@ export function ScoutingPanel({
                 className="scout-layer-search"
                 type="search"
                 value={otherLayerQuery}
-                aria-label="Search layers from other hunts"
+                aria-label="Search other layers"
                 placeholder="Search hunt or layer"
                 onChange={(event) => setOtherLayerQuery(event.target.value)}
               />
@@ -424,13 +424,13 @@ export function ScoutingPanel({
               <label>
                 Layer
                 <select value={layerId} onChange={(event) => setLayerId(event.target.value)}>
-                  <optgroup label={`Current hunt · ${activeHunt.huntNumber}`}>
+                  <optgroup label={`Current layers · ${activeHunt.huntNumber}`}>
                     {currentHuntLayers.map((layer) => (
                       <option key={layer.id} value={layer.id}>{layer.name}</option>
                     ))}
                   </optgroup>
                   {otherHuntLayers.length > 0 && (
-                    <optgroup label="Other hunts">
+                    <optgroup label="Other layers">
                       {otherHuntLayers.map((layer) => (
                         <option key={layer.id} value={layer.id}>{layer.name}</option>
                       ))}
