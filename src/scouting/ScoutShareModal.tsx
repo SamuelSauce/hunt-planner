@@ -69,13 +69,20 @@ export function ScoutShareModal({
       authStatus !== 'signed-in' ||
       status === 'publishing' ||
       !title.trim() ||
-      selectedPinCount === 0
+      selectedPinCount === 0 ||
+      selectedLayerIds.length > 50
     ) return
 
     setStatus('publishing')
     setMessage('')
     try {
-      const share = await createScoutShare(workspace, {
+      const selected = new Set(selectedLayerIds)
+      const selectedWorkspace = {
+        ...workspace,
+        layers: workspace.layers.filter((layer) => selected.has(layer.id)),
+        pins: workspace.pins.filter((pin) => selected.has(pin.layerId)),
+      }
+      const share = await createScoutShare(selectedWorkspace, {
         title,
         layerIds: selectedLayerIds,
         includeNotes,
@@ -126,7 +133,8 @@ export function ScoutShareModal({
         </div>
 
         <p id="scout-share-description">
-          Create a read-only snapshot that anyone with the link can open—no account required.
+          Create a read-only snapshot. Layers currently visible on your map are selected
+          automatically, and you can adjust them before publishing.
         </p>
 
         <div className="scout-share-warning">
@@ -232,7 +240,8 @@ export function ScoutShareModal({
             disabled={
               status === 'publishing' ||
               !title.trim() ||
-              selectedPinCount === 0
+              selectedPinCount === 0 ||
+              selectedLayerIds.length > 50
             }
             onClick={publish}
           >
@@ -246,6 +255,11 @@ export function ScoutShareModal({
         {message && (
           <p className={`scout-share-message ${status === 'error' ? 'error' : ''}`} role="status">
             {message}
+          </p>
+        )}
+        {selectedLayerIds.length > 50 && (
+          <p className="scout-share-message error" role="status">
+            Choose no more than 50 layers for one shared map.
           </p>
         )}
       </section>

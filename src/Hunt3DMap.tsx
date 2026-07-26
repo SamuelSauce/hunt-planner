@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ChevronDown,
@@ -48,21 +48,26 @@ import {
   type ScoutPersistenceStatus,
 } from './scouting/ScoutingPanel'
 import { ScoutShareModal } from './scouting/ScoutShareModal'
-import { loadScoutWorkspace, saveScoutWorkspace } from './scouting/api'
+import { loadScoutLibrary, saveScoutLibrary } from './scouting/api'
 import {
-  clearGuestScoutDraft,
-  loadGuestScoutDraft,
-  saveGuestScoutDraft,
+  clearGuestScoutLibrary,
+  loadGuestScoutLibrary,
+  saveGuestScoutLibrary,
 } from './scouting/draftStore'
 import {
   DEFAULT_SCOUT_FILTERS,
   GUEST_PIN_LIMIT,
   createScoutLayer,
+  createScoutLibrary,
   createScoutPin,
-  createScoutWorkspace,
-  mergeScoutWorkspaces,
+  mergeScoutLibraries,
+  sameScoutHunt,
+  scoutLibraryForHunt,
+  scoutLibraryForPersistence,
   scoutPinsGeoJson,
+  scoutWorkspaceFromLibrary,
   type ScoutFilters,
+  type ScoutHuntContext,
   type ScoutPinDraft,
 } from './scouting/model'
 import {
@@ -112,6 +117,7 @@ export function Hunt3DMap({
 }: {
   hunt: MapHunt & {
     category: string
+    gender: string
     weapon: string
     seasonDateText: string | null
   }
@@ -146,6 +152,21 @@ export function Hunt3DMap({
   const [potentialAnalysis, setPotentialAnalysis] = useState<HuntPotentialAnalysis | null>(null)
   const [pinPopupContainer] = useState(() => document.createElement('div'))
   const plannerState = hunt.state ?? 'utah'
+  const huntContext: ScoutHuntContext = useMemo(() => ({
+    state: plannerState,
+    huntNumber: hunt.huntNumber,
+    huntName: hunt.huntName,
+    species: hunt.species,
+    gender: hunt.gender,
+    weapon: hunt.weapon,
+  }), [
+    hunt.gender,
+    hunt.huntName,
+    hunt.huntNumber,
+    hunt.species,
+    hunt.weapon,
+    plannerState,
+  ])
   const [authStatus, setAuthStatus] = useState<'loading' | 'signed-in' | 'signed-out'>('loading')
   const [authMessage, setAuthMessage] = useState('')
   const [persistenceStatus, setPersistenceStatus] =
@@ -153,15 +174,26 @@ export function Hunt3DMap({
   const [workspaceStorage, setWorkspaceStorage] = useState<'guest' | 'remote'>('guest')
   const [filters, setFilters] = useState<ScoutFilters>(DEFAULT_SCOUT_FILTERS)
   const [workspace, setWorkspace] = useState(() =>
-    createScoutWorkspace(plannerState, hunt.huntNumber, hunt.huntName),
+    scoutLibraryForHunt(createScoutLibrary(), huntContext),
   )
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
   const [pinEditorOpen, setPinEditorOpen] = useState(false)
   const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [headerExpanded, setHeaderExpanded] = useState(false)
   const lastPersistedWorkspaceRef = useRef('')
   const dataPath = boundaryDataPath(plannerState, hunt.species, hunt.category)
   const selectedPin = workspace.pins.find((candidate) => candidate.id === selectedPinId) ?? null
+  const shareWorkspace = useMemo(
+    () => scoutWorkspaceFromLibrary(workspace, huntContext),
+    [huntContext, workspace],
+  )
+  const hasVisibleScoutPins = useMemo(() => {
+    const visibleLayerIds = new Set(
+      workspace.layers.filter((layer) => layer.visible).map((layer) => layer.id),
+    )
+    return workspace.pins.some((candidate) => visibleLayerIds.has(candidate.layerId))
+  }, [workspace.layers, workspace.pins])
 
   useEffect(() => {
     onPinChangeRef.current = onPinChange
@@ -186,14 +218,13 @@ export function Hunt3DMap({
       setWorkspaceLoaded(false)
       setPersistenceStatus('loading')
       setSelectedPinId(null)
-      const guestDraft = await loadGuestScoutDraft(plannerState, hunt.huntNumber)
+      const guestDraft = await loadGuestScoutLibrary()
       if (cancelled) return
 
       if (authStatus === 'signed-out') {
-        const next = guestDraft ??
-          createScoutWorkspace(plannerState, hunt.huntNumber, hunt.huntName)
-        lastPersistedWorkspaceRef.current = JSON.stringify(next)
-        setWorkspace(next)
+        const next = guestDraft ?? createScoutLibrary()
+        lastPersistedWorkspaceRef.current = JSON.stringify(scoutLibraryForPersistence(next))
+        setWorkspace(scoutLibraryForHunt(next, huntContext))
         setWorkspaceStorage('guest')
         setPersistenceStatus('local')
         setWorkspaceLoaded(true)
@@ -201,26 +232,29 @@ export function Hunt3DMap({
       }
 
       try {
-        const remote = await loadScoutWorkspace(plannerState, hunt.huntNumber)
-        const fallback = createScoutWorkspace(plannerState, hunt.huntNumber, hunt.huntName)
-        const hasGuestWork = guestDraft !== null && guestDraft.pins.length > 0
+        const remote = await loadScoutLibrary()
+        const fallback = createScoutLibrary()
+        const guestForPersistence = guestDraft
+          ? scoutLibraryForPersistence(guestDraft)
+          : null
+        const hasGuestWork = guestForPersistence !== null &&
+          (guestForPersistence.pins.length > 0 || guestForPersistence.layers.length > 0)
         const next = hasGuestWork
-          ? mergeScoutWorkspaces(remote, guestDraft)
+          ? mergeScoutLibraries(remote, guestForPersistence)
           : remote ?? fallback
         if (hasGuestWork) {
-          await saveScoutWorkspace(next)
-          await clearGuestScoutDraft(plannerState, hunt.huntNumber)
+          await saveScoutLibrary(scoutLibraryForPersistence(next))
+          await clearGuestScoutLibrary()
         }
         if (cancelled) return
-        lastPersistedWorkspaceRef.current = JSON.stringify(next)
-        setWorkspace(next)
+        lastPersistedWorkspaceRef.current = JSON.stringify(scoutLibraryForPersistence(next))
+        setWorkspace(scoutLibraryForHunt(next, huntContext))
         setWorkspaceStorage('remote')
         setPersistenceStatus('saved')
       } catch {
         if (cancelled) return
-        const next = guestDraft ??
-          createScoutWorkspace(plannerState, hunt.huntNumber, hunt.huntName)
-        setWorkspace(next)
+        const next = guestDraft ?? createScoutLibrary()
+        setWorkspace(scoutLibraryForHunt(next, huntContext))
         setWorkspaceStorage('guest')
         setPersistenceStatus('error')
       }
@@ -231,19 +265,20 @@ export function Hunt3DMap({
     return () => {
       cancelled = true
     }
-  }, [authStatus, hunt.huntName, hunt.huntNumber, plannerState])
+  }, [authStatus, huntContext])
 
   useEffect(() => {
     if (!workspaceLoaded) return
-    const serialized = JSON.stringify(workspace)
+    const persistableWorkspace = scoutLibraryForPersistence(workspace)
+    const serialized = JSON.stringify(persistableWorkspace)
     if (serialized === lastPersistedWorkspaceRef.current) return
 
     const syncsRemotely = workspaceStorage === 'remote'
     setPersistenceStatus(syncsRemotely ? 'saving' : authStatus === 'signed-in' ? 'error' : 'local')
     const timer = window.setTimeout(() => {
       const persist = syncsRemotely
-        ? saveScoutWorkspace(workspace)
-        : saveGuestScoutDraft(workspace).then(() => workspace)
+        ? saveScoutLibrary(persistableWorkspace)
+        : saveGuestScoutLibrary(persistableWorkspace).then(() => persistableWorkspace)
       void persist
         .then(() => {
           lastPersistedWorkspaceRef.current = serialized
@@ -252,7 +287,7 @@ export function Hunt3DMap({
           )
         })
         .catch(async () => {
-          if (syncsRemotely) await saveGuestScoutDraft(workspace)
+          if (syncsRemotely) await saveGuestScoutLibrary(persistableWorkspace)
           setPersistenceStatus('error')
         })
     }, syncsRemotely ? 650 : 180)
@@ -696,13 +731,22 @@ export function Hunt3DMap({
 
   const handleAddLayer = () => {
     if (authStatus !== 'signed-in') return
-    updateWorkspace((current) => ({
-      ...current,
-      layers: [
-        ...current.layers,
-        createScoutLayer(`Layer ${current.layers.length + 1}`, current.layers.length),
-      ],
-    }))
+    updateWorkspace((current) => {
+      const currentHuntLayerCount = current.layers
+        .filter((layer) => sameScoutHunt(layer.hunt, huntContext))
+        .length
+      return {
+        ...current,
+        layers: [
+          ...current.layers,
+          createScoutLayer(
+            `${hunt.huntNumber} · Layer ${currentHuntLayerCount + 1}`,
+            current.layers.length,
+            huntContext,
+          ),
+        ],
+      }
+    })
   }
 
   const handleRenameLayer = (layerId: string, name: string) => {
@@ -711,7 +755,7 @@ export function Hunt3DMap({
       ...current,
       layers: current.layers.map((layer) =>
         layer.id === layerId
-          ? { ...layer, name: name.slice(0, 48), updatedAt: Date.now() }
+          ? { ...layer, name: name.slice(0, 120), updatedAt: Date.now() }
           : layer,
       ),
     }))
@@ -722,7 +766,7 @@ export function Hunt3DMap({
       ...current,
       layers: current.layers.map((layer) =>
         layer.id === layerId
-          ? { ...layer, visible: !layer.visible, updatedAt: Date.now() }
+          ? { ...layer, visible: !layer.visible }
           : layer,
       ),
     }))
@@ -732,7 +776,7 @@ export function Hunt3DMap({
     if (authStatus !== 'signed-in') return
     updateWorkspace((current) => {
       if (
-        current.layers.length <= 1 ||
+        current.layers.find((layer) => layer.id === layerId)?.kind === 'hunt-default' ||
         current.pins.some((candidate) => candidate.layerId === layerId)
       ) return current
       return {
@@ -793,7 +837,7 @@ export function Hunt3DMap({
 
   return (
     <section
-      className="hunt-3d-modal"
+      className={`hunt-3d-modal ${headerExpanded ? 'header-details-open' : ''}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="hunt-3d-title"
@@ -802,22 +846,38 @@ export function Hunt3DMap({
 
       <header className="hunt-3d-header">
         <div className="hunt-3d-title">
-          <span className="hunt-3d-mark" aria-hidden="true">
-            <Mountain size={20} />
-          </span>
+          <span className="hunt-3d-compact-mark" aria-hidden="true">3D</span>
           <div>
-            <span className="hunt-3d-kicker">
-              3D hunt map <i>Beta</i>
-            </span>
-            <h2 id="hunt-3d-title">{hunt.huntName}</h2>
-            <p>{hunt.huntNumber} · {hunt.species} · {hunt.weapon || 'Weapon varies'}</p>
+            <h2 id="hunt-3d-title">
+              <strong>{hunt.huntNumber}</strong>
+              <span>{hunt.huntName}</span>
+            </h2>
+            {headerExpanded && (
+              <p>{hunt.gender} {hunt.species} · {hunt.weapon || 'Weapon varies'}</p>
+            )}
           </div>
+          <button
+            className="hunt-3d-header-toggle"
+            type="button"
+            aria-expanded={headerExpanded}
+            aria-label={headerExpanded ? 'Hide hunt details' : 'Show hunt details'}
+            onClick={() => setHeaderExpanded((current) => !current)}
+          >
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
         </div>
         <div className="hunt-3d-header-actions">
           <button
             className={`hunt-3d-share ${shareStatus === 'copied' || shareStatus === 'shared' ? 'copied' : ''}`}
             type="button"
-            onClick={() => onShare(pin)}
+            onClick={() => {
+              if (hasVisibleScoutPins) {
+                setPinEditorOpen(false)
+                setShareModalOpen(true)
+              } else {
+                onShare(pin)
+              }
+            }}
           >
             <Share2 size={18} aria-hidden="true" />
             <span>
@@ -829,7 +889,9 @@ export function Hunt3DMap({
                     ? 'Copy failed'
                     : pin
                       ? 'Share pin'
-                      : 'Share 3D map'}
+                      : hasVisibleScoutPins
+                        ? 'Share visible layers'
+                        : 'Share 3D map'}
             </span>
           </button>
           <button
@@ -953,6 +1015,7 @@ export function Hunt3DMap({
 
           <ScoutingPanel
             workspace={workspace}
+            activeHunt={huntContext}
             filters={filters}
             authStatus={authStatus}
             persistenceStatus={persistenceStatus}
@@ -998,9 +1061,11 @@ export function Hunt3DMap({
       </aside>
 
       <ScoutShareModal
-        key={shareModalOpen ? `open-${workspace.updatedAt}` : 'closed'}
+        key={shareModalOpen
+          ? `open-${workspace.layers.filter((layer) => layer.visible).map((layer) => layer.id).join('-')}`
+          : 'closed'}
         open={shareModalOpen}
-        workspace={workspace}
+        workspace={shareWorkspace}
         authStatus={authStatus}
         onClose={() => setShareModalOpen(false)}
         onSignIn={handleSignIn}

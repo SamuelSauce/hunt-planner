@@ -1475,18 +1475,18 @@ textarea {
 
 .hunt-3d-header {
   display: flex;
-  top: 16px;
-  right: 16px;
-  left: 16px;
+  top: 12px;
+  right: 12px;
+  left: 12px;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  min-height: 76px;
-  padding: 12px 14px;
+  gap: 12px;
+  min-height: 54px;
+  padding: 7px 9px;
   pointer-events: none;
   background: linear-gradient(90deg, rgba(14, 29, 21, 0.96), rgba(14, 29, 21, 0.88));
   border: 1px solid rgba(230, 240, 232, 0.18);
-  border-radius: 12px;
+  border-radius: 10px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.26);
   backdrop-filter: blur(16px);
 }
@@ -1495,64 +1495,89 @@ textarea {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  pointer-events: auto;
 }
 
 .hunt-3d-title > div {
   min-width: 0;
 }
 
-.hunt-3d-mark {
+.hunt-3d-compact-mark {
   display: grid;
-  width: 43px;
-  height: 43px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
-  color: #fff;
-  background: #d65a2e;
-  border-radius: 10px;
-  box-shadow: 0 8px 20px rgba(214, 90, 46, 0.28);
-}
-
-.hunt-3d-kicker {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #abc4b4;
-  font-size: 0.68rem;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.hunt-3d-kicker i {
-  padding: 3px 5px;
   color: #ffe4d7;
-  background: rgba(214, 90, 46, 0.28);
+  background: rgba(214, 90, 46, 0.82);
   border: 1px solid rgba(255, 198, 173, 0.26);
-  border-radius: 4px;
-  font-size: 0.58rem;
-  font-style: normal;
+  border-radius: 8px;
+  box-shadow: 0 7px 18px rgba(214, 90, 46, 0.2);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
 }
 
 .hunt-3d-title h2 {
+  display: flex;
   overflow: hidden;
-  margin: 4px 0 1px;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
   color: #fff;
-  font-size: 1.08rem;
+  font-size: 0.93rem;
   letter-spacing: -0.01em;
   line-height: 1.15;
+}
+
+.hunt-3d-title h2 strong {
+  flex: 0 0 auto;
+  color: #ffd8c7;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
+}
+
+.hunt-3d-title h2 span {
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .hunt-3d-title p {
   overflow: hidden;
+  margin-top: 3px;
   color: #c1d1c6;
-  font-size: 0.76rem;
+  font-size: 0.66rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hunt-3d-header-toggle {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  color: #b9cabf;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hunt-3d-header-toggle svg {
+  transition: transform 160ms ease;
+}
+
+.hunt-3d-header-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.hunt-3d-header-toggle:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .hunt-3d-header-actions {
@@ -1565,7 +1590,7 @@ textarea {
 
 .hunt-3d-share,
 .hunt-3d-close {
-  min-height: 42px;
+  min-height: 38px;
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -1591,8 +1616,8 @@ textarea {
 
 .hunt-3d-close {
   display: grid;
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   flex: 0 0 auto;
   place-items: center;
 }
@@ -1604,10 +1629,10 @@ textarea {
 
 .hunt-3d-layers {
   display: grid;
-  top: 108px;
+  top: 78px;
   right: 16px;
   width: 342px;
-  max-height: calc(100vh - 124px);
+  max-height: calc(100vh - 94px);
   gap: 13px;
   padding: 14px;
   overflow-y: auto;
@@ -2118,9 +2143,38 @@ textarea {
   box-shadow: 0 0 0 2px rgba(83, 149, 107, 0.18);
 }
 
+.scout-layer-library,
+.scout-layer-group,
 .scout-layer-list {
   display: grid;
   gap: 5px;
+}
+
+.scout-layer-library {
+  gap: 8px;
+}
+
+.scout-layer-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+  color: #dfece3;
+}
+
+.scout-layer-group-heading span,
+.scout-other-layers summary > span {
+  font-size: 0.61rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.scout-layer-group-heading small,
+.scout-other-layers summary small {
+  color: #8fa79a;
+  font-size: 0.58rem;
 }
 
 .scout-layer-row {
@@ -2133,9 +2187,11 @@ textarea {
 .scout-layer-row input {
   width: 100%;
   min-height: 29px;
+  overflow: hidden;
   background: transparent;
   border-color: transparent;
   font-weight: 750;
+  text-overflow: ellipsis;
 }
 
 .scout-layer-row input:not([readonly]):hover {
@@ -2146,6 +2202,60 @@ textarea {
   color: #8fa79a;
   font-size: 0.6rem;
   font-variant-numeric: tabular-nums;
+}
+
+.scout-layer-row-spacer {
+  width: 25px;
+  height: 25px;
+}
+
+.scout-other-layers {
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.scout-other-layers summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 3px;
+  color: #dfece3;
+  cursor: pointer;
+  list-style: none;
+}
+
+.scout-other-layers summary::-webkit-details-marker {
+  display: none;
+}
+
+.scout-other-layers summary svg {
+  color: #93aa9b;
+  transition: transform 160ms ease;
+}
+
+.scout-other-layers[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.scout-layer-search {
+  width: 100%;
+  margin: 5px 0;
+}
+
+.scout-layer-list-global {
+  max-height: 164px;
+  padding-right: 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.scout-layer-empty {
+  padding: 8px 3px;
+  color: #8fa79a;
+  font-size: 0.61rem;
 }
 
 .scout-layer-visibility,
@@ -2345,10 +2455,14 @@ textarea {
 .scout-share-layers {
   display: grid;
   gap: 6px;
+  max-height: min(32vh, 250px);
   min-width: 0;
   margin: 0;
-  padding: 0;
+  padding: 0 3px 0 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 0;
+  scrollbar-width: thin;
 }
 
 .scout-share-layers legend {
@@ -3665,9 +3779,9 @@ textarea {
   }
 
   .hunt-3d-header {
-    top: 10px;
-    right: 10px;
-    left: 10px;
+    top: 8px;
+    right: 8px;
+    left: 8px;
   }
 
   .hunt-3d-layers {
@@ -3854,12 +3968,12 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .hunt-3d-mark {
+  .hunt-3d-compact-mark {
     display: none;
   }
 
   .hunt-3d-share {
-    width: 42px;
+    width: 38px;
     padding: 0;
     justify-content: center;
   }
@@ -3889,5 +4003,9 @@ textarea {
 
   .hunt-3d-layers {
     max-height: min(54vh, 410px);
+  }
+
+  .scout-layer-list-global {
+    max-height: 118px;
   }
 }

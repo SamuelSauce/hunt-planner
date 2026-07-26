@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import worker, {
   buildScoutShareDocument,
+  scoutLibraryFromWorkspaces,
+  scoutWorkspacesFromLibrary,
+  validateScoutLibrary,
   validateScoutWorkspace,
 } from "./index.js";
 
@@ -225,4 +228,48 @@ test("requires authentication before reading a scout workspace", async () => {
 
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: "Sign in to continue." });
+});
+
+test("combines hunt workspaces into a global library and partitions them for storage", () => {
+  const second = workspace({
+    huntNumber: "EA1189",
+    name: "Wasatch Mtns, West-Central",
+    layers: [{
+      ...workspace().layers[0],
+      id: "layer_wasatch",
+      name: "Scratch",
+    }],
+    pins: [{
+      ...workspace().pins[0],
+      id: "pin_wasatch_1",
+      layerId: "layer_wasatch",
+      species: "Elk",
+    }],
+  });
+
+  const library = scoutLibraryFromWorkspaces([workspace(), second], 1_785_000_200_000);
+
+  assert.equal(library.version, 2);
+  assert.equal(library.layers.length, 2);
+  assert.equal(library.pins.length, 2);
+  assert.match(library.layers[0].name, /^DB1001 ·/);
+  assert.match(library.layers[1].name, /^EA1189 ·/);
+
+  const partitioned = scoutWorkspacesFromLibrary(library);
+  assert.deepEqual(
+    partitioned.map((candidate) => candidate.huntNumber).sort(),
+    ["DB1001", "EA1189"],
+  );
+});
+
+test("validates global layer hunt metadata and per-hunt limits", () => {
+  const library = scoutLibraryFromWorkspaces([workspace()]);
+  assert.equal(validateScoutLibrary(library).layers[0].hunt.huntNumber, "DB1001");
+
+  const invalid = structuredClone(library);
+  invalid.layers[0].hunt.huntNumber = "";
+  assert.throws(
+    () => validateScoutLibrary(invalid),
+    /hunt number is invalid/i,
+  );
 });

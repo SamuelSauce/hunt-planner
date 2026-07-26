@@ -4,7 +4,7 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const COMMUNITY_PATH_PREFIX = "/api/community";
 const MAPS_PATH_PREFIX = "/api/maps";
 const MAX_COMMUNITY_POST_BODY_BYTES = 16_384;
-const MAX_MAPS_POST_BODY_BYTES = 786_432;
+const MAX_MAPS_POST_BODY_BYTES = 5_242_880;
 const ALLOWED_METHODS = new Set(["GET", "POST", "OPTIONS", "HEAD"]);
 const FORWARDED_REQUEST_HEADERS = [
   ["accept", "Accept"],

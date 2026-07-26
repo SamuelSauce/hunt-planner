@@ -1,13 +1,37 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  createScoutLibrary,
   createScoutPin,
   createScoutWorkspace,
+  defaultScoutLayerName,
   filterScoutPins,
   mergeScoutWorkspaces,
+  scoutLibraryForHunt,
+  scoutLibraryForPersistence,
+  scoutLibraryFromWorkspaces,
   scoutPinColor,
   scoutPinsGeoJson,
+  type ScoutHuntContext,
 } from '../src/scouting/model.ts'
+
+const paunsaugunt: ScoutHuntContext = {
+  state: 'utah',
+  huntNumber: 'DB1001',
+  huntName: 'Paunsaugunt',
+  species: 'Deer',
+  gender: 'Buck',
+  weapon: 'Archery',
+}
+
+const wasatch: ScoutHuntContext = {
+  state: 'utah',
+  huntNumber: 'EA1189',
+  huntName: 'Wasatch Mtns, West-Central',
+  species: 'Elk',
+  gender: 'Antlerless',
+  weapon: 'Any Legal Weapon',
+}
 
 function sampleWorkspace() {
   const workspace = createScoutWorkspace('utah', 'DB1001', 'Paunsaugunt', 100)
@@ -124,4 +148,55 @@ test('builds a dense 1,000-pin feature collection for MapLibre clustering', () =
 
   assert.equal(data.features.length, 1_000)
   assert.equal(data.features[999].properties.title, 'Pin 1000')
+})
+
+test('creates a descriptive provisional hunt layer without persisting it empty', () => {
+  const opened = scoutLibraryForHunt(createScoutLibrary(100), wasatch, 101)
+
+  assert.equal(opened.layers.length, 1)
+  assert.equal(opened.layers[0].name, 'EA1189 · ALW, Antlerless Elk, Wasatch Mtns, West-Central')
+  assert.equal(defaultScoutLayerName(paunsaugunt), 'DB1001 · ARCH, Buck Deer, Paunsaugunt')
+  assert.equal(scoutLibraryForPersistence(opened).layers.length, 0)
+
+  opened.pins.push(createScoutPin({
+    layerId: opened.layers[0].id,
+    location: { latitude: 40.2, longitude: -111.4 },
+    title: 'Saved sign',
+    type: 'check',
+    status: 'field',
+    species: 'Elk',
+    observationYear: 2026,
+    notes: '',
+    waterSeasonality: 'unknown',
+    colorOverride: null,
+  }, 102))
+
+  assert.equal(scoutLibraryForPersistence(opened).layers.length, 1)
+})
+
+test('opening another hunt turns its layers on and all other hunt layers off', () => {
+  const paunsauguntWorkspace = sampleWorkspace()
+  const wasatchWorkspace = createScoutWorkspace('utah', 'EA1189', 'Wasatch Mtns, West-Central', 200)
+  wasatchWorkspace.layers[0].hunt = wasatch
+  wasatchWorkspace.pins.push(createScoutPin({
+    layerId: wasatchWorkspace.layers[0].id,
+    location: { latitude: 40.2, longitude: -111.4 },
+    title: 'Wasatch glassing',
+    type: 'glassing',
+    status: 'e-scout',
+    species: 'Elk',
+    observationYear: 2026,
+    notes: '',
+    waterSeasonality: 'unknown',
+    colorOverride: null,
+  }, 201))
+
+  const library = scoutLibraryFromWorkspaces([paunsauguntWorkspace, wasatchWorkspace], 300)
+  const opened = scoutLibraryForHunt(library, paunsaugunt, 301)
+  const current = opened.layers.filter((layer) => layer.hunt.huntNumber === 'DB1001')
+  const other = opened.layers.filter((layer) => layer.hunt.huntNumber === 'EA1189')
+
+  assert.ok(current.every((layer) => layer.visible))
+  assert.ok(other.every((layer) => !layer.visible))
+  assert.equal(opened.pins.length, 3)
 })

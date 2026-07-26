@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Check,
+  ChevronDown,
   Cloud,
   CloudOff,
   Filter,
@@ -19,14 +20,18 @@ import type { MapPinLocation } from '../mapPin'
 import {
   GUEST_PIN_LIMIT,
   SCOUT_LAYER_COLORS,
+  SCOUT_LAYER_NAME_LIMIT,
   SCOUT_PIN_TYPES,
+  sameScoutHunt,
   type ScoutFilters,
+  type ScoutHuntContext,
+  type ScoutLayer,
+  type ScoutLibrary,
   type ScoutPin,
   type ScoutPinDraft,
   type ScoutPinStatus,
   type ScoutPinType,
   type ScoutWaterSeasonality,
-  type ScoutWorkspace,
 } from './model'
 
 type AuthStatus = 'loading' | 'signed-in' | 'signed-out'
@@ -34,6 +39,7 @@ export type ScoutPersistenceStatus = 'loading' | 'saved' | 'saving' | 'local' | 
 
 export function ScoutingPanel({
   workspace,
+  activeHunt,
   filters,
   authStatus,
   persistenceStatus,
@@ -55,7 +61,8 @@ export function ScoutingPanel({
   onSignIn,
   onSignOut,
 }: {
-  workspace: ScoutWorkspace
+  workspace: ScoutLibrary
+  activeHunt: ScoutHuntContext
   filters: ScoutFilters
   authStatus: AuthStatus
   persistenceStatus: ScoutPersistenceStatus
@@ -88,7 +95,36 @@ export function ScoutingPanel({
   const [waterSeasonality, setWaterSeasonality] =
     useState<ScoutWaterSeasonality>('unknown')
   const [colorOverride, setColorOverride] = useState<string | null>(null)
-  const defaultLayerId = workspace.layers[0]?.id ?? ''
+  const [otherLayerQuery, setOtherLayerQuery] = useState('')
+  const currentHuntLayers = useMemo(
+    () => workspace.layers
+      .filter((layer) => sameScoutHunt(layer.hunt, activeHunt))
+      .sort((a, b) => a.sortOrder - b.sortOrder),
+    [activeHunt, workspace.layers],
+  )
+  const otherHuntLayers = useMemo(
+    () => workspace.layers
+      .filter((layer) => !sameScoutHunt(layer.hunt, activeHunt))
+      .sort((a, b) => (
+        a.hunt.huntNumber.localeCompare(b.hunt.huntNumber) ||
+        a.sortOrder - b.sortOrder
+      )),
+    [activeHunt, workspace.layers],
+  )
+  const filteredOtherHuntLayers = useMemo(() => {
+    const query = otherLayerQuery.trim().toLowerCase()
+    if (!query) return otherHuntLayers
+    return otherHuntLayers.filter((layer) => (
+      layer.name.toLowerCase().includes(query) ||
+      layer.hunt.huntNumber.toLowerCase().includes(query) ||
+      layer.hunt.huntName.toLowerCase().includes(query)
+    ))
+  }, [otherHuntLayers, otherLayerQuery])
+  const defaultLayerId = currentHuntLayers
+    .find((layer) => layer.kind === 'hunt-default')?.id ??
+    currentHuntLayers[0]?.id ??
+    workspace.layers[0]?.id ??
+    ''
 
   useEffect(() => {
     if (!editingLocation) return
@@ -112,6 +148,53 @@ export function ScoutingPanel({
   }, [workspace.pins])
 
   const guestLimitReached = !isSignedIn && workspace.pins.length >= GUEST_PIN_LIMIT
+  const visibleLayerIds = useMemo(
+    () => new Set(workspace.layers.filter((layer) => layer.visible).map((layer) => layer.id)),
+    [workspace.layers],
+  )
+  const visiblePinCount = workspace.pins
+    .filter((pin) => visibleLayerIds.has(pin.layerId))
+    .length
+
+  const layerRow = (layer: ScoutLayer) => {
+    const count = workspace.pins.filter((pin) => pin.layerId === layer.id).length
+    const canDelete = isSignedIn && layer.kind === 'custom'
+    return (
+      <div className="scout-layer-row" key={layer.id}>
+        <button
+          type="button"
+          className="scout-layer-visibility"
+          aria-label={`${layer.visible ? 'Hide' : 'Show'} ${layer.name}`}
+          aria-pressed={layer.visible}
+          onClick={() => onToggleLayer(layer.id)}
+          style={{ '--scout-color': layer.color } as CSSProperties}
+        >
+          {layer.visible && <Check size={13} aria-hidden="true" />}
+        </button>
+        <input
+          aria-label="Layer name"
+          title={layer.name}
+          value={layer.name}
+          maxLength={SCOUT_LAYER_NAME_LIMIT}
+          readOnly={!isSignedIn}
+          onChange={(event) => onRenameLayer(layer.id, event.target.value)}
+        />
+        <small aria-label={`${count} pins`}>{count}</small>
+        {canDelete ? (
+          <button
+            className="scout-delete-layer"
+            type="button"
+            disabled={count > 0}
+            title={count > 0 ? 'Move or delete this layer’s pins first' : 'Delete layer'}
+            aria-label={`Delete ${layer.name}`}
+            onClick={() => onDeleteLayer(layer.id)}
+          >
+            <Trash2 size={13} aria-hidden="true" />
+          </button>
+        ) : <span className="scout-layer-row-spacer" />}
+      </div>
+    )
+  }
 
   const submitPin = () => {
     if (!editingLocation || !layerId || (guestLimitReached && !selectedPin)) return
@@ -138,7 +221,7 @@ export function ScoutingPanel({
         <div className="scout-panel-heading">
           <span>
             <Layers3 size={17} aria-hidden="true" />
-            <strong>Scout layers</strong>
+            <strong>Global scout layers</strong>
           </span>
           <div className="scout-panel-heading-actions">
             <ScoutSaveState
@@ -149,7 +232,8 @@ export function ScoutingPanel({
               className="scout-share-layers-button"
               type="button"
               onClick={onShareLayers}
-              disabled={workspace.pins.length === 0}
+              disabled={visiblePinCount === 0}
+              title={visiblePinCount === 0 ? 'Turn on a layer with pins to share it' : 'Share visible layers'}
             >
               <Share2 size={13} aria-hidden="true" />
               Share
@@ -159,11 +243,13 @@ export function ScoutingPanel({
 
         <div className="scout-auth-row">
           <div>
-            <strong>{isSignedIn ? 'Private workspace' : 'Guest scratch layer'}</strong>
+            <strong>{isSignedIn ? 'Private layer library' : 'Guest layer library'}</strong>
             <small>
               {isSignedIn
-                ? 'Saved and synced across your devices'
-                : `Saved on this device · ${workspace.pins.length}/${GUEST_PIN_LIMIT} pins`}
+                ? `${workspace.layers.length} layer${workspace.layers.length === 1 ? '' : 's'} · synced across devices`
+                : workspace.pins.length >= GUEST_PIN_LIMIT
+                  ? `${workspace.pins.length} saved pins · sign in to add more`
+                  : `Saved on this device · ${workspace.pins.length}/${GUEST_PIN_LIMIT} pins`}
             </small>
           </div>
           {isSignedIn ? (
@@ -214,57 +300,52 @@ export function ScoutingPanel({
         </select>
       </div>
 
-      <div className="scout-layer-list">
-        {workspace.layers
-          .slice()
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((layer) => {
-            const count = workspace.pins.filter((pin) => pin.layerId === layer.id).length
-            return (
-              <div className="scout-layer-row" key={layer.id}>
-                <button
-                  type="button"
-                  className="scout-layer-visibility"
-                  aria-label={`${layer.visible ? 'Hide' : 'Show'} ${layer.name}`}
-                  aria-pressed={layer.visible}
-                  onClick={() => onToggleLayer(layer.id)}
-                  style={{ '--scout-color': layer.color } as CSSProperties}
-                >
-                  {layer.visible && <Check size={13} aria-hidden="true" />}
-                </button>
-                <input
-                  aria-label="Layer name"
-                  value={layer.name}
-                  maxLength={48}
-                  readOnly={!isSignedIn}
-                  onChange={(event) => onRenameLayer(layer.id, event.target.value)}
-                />
-                <small>{count}</small>
-                {isSignedIn && workspace.layers.length > 1 && (
-                  <button
-                    className="scout-delete-layer"
-                    type="button"
-                    disabled={count > 0}
-                    title={count > 0 ? 'Move or delete this layer’s pins first' : 'Delete layer'}
-                    aria-label={`Delete ${layer.name}`}
-                    onClick={() => onDeleteLayer(layer.id)}
-                  >
-                    <Trash2 size={13} aria-hidden="true" />
-                  </button>
-                )}
-              </div>
-            )
-          })}
-        <button
-          className="scout-add-layer"
-          type="button"
-          onClick={onAddLayer}
-          disabled={!isSignedIn}
-          title={isSignedIn ? 'Add a custom layer' : 'Sign in to create more layers'}
-        >
-          <Plus size={14} aria-hidden="true" />
-          {isSignedIn ? 'Add layer' : 'Sign in for custom layers'}
-        </button>
+      <div className="scout-layer-library">
+        <section className="scout-layer-group" aria-label={`Layers for ${activeHunt.huntNumber}`}>
+          <div className="scout-layer-group-heading">
+            <span>Current hunt</span>
+            <small>{activeHunt.huntNumber}</small>
+          </div>
+          <div className="scout-layer-list">
+            {currentHuntLayers.map(layerRow)}
+          </div>
+          <button
+            className="scout-add-layer"
+            type="button"
+            onClick={onAddLayer}
+            disabled={!isSignedIn}
+            title={isSignedIn ? 'Add a custom layer for this hunt' : 'Sign in to create more layers'}
+          >
+            <Plus size={14} aria-hidden="true" />
+            {isSignedIn ? 'Add layer for this hunt' : 'Sign in for custom layers'}
+          </button>
+        </section>
+
+        {otherHuntLayers.length > 0 && (
+          <details className="scout-other-layers">
+            <summary>
+              <span>Other hunts</span>
+              <small>{otherHuntLayers.length} layer{otherHuntLayers.length === 1 ? '' : 's'}</small>
+              <ChevronDown size={14} aria-hidden="true" />
+            </summary>
+            {otherHuntLayers.length > 5 && (
+              <input
+                className="scout-layer-search"
+                type="search"
+                value={otherLayerQuery}
+                aria-label="Search layers from other hunts"
+                placeholder="Search hunt or layer"
+                onChange={(event) => setOtherLayerQuery(event.target.value)}
+              />
+            )}
+            <div className="scout-layer-list scout-layer-list-global">
+              {filteredOtherHuntLayers.map(layerRow)}
+              {filteredOtherHuntLayers.length === 0 && (
+                <small className="scout-layer-empty">No matching layers.</small>
+              )}
+            </div>
+          </details>
+        )}
       </div>
 
         {editingLocation ? (
@@ -343,9 +424,18 @@ export function ScoutingPanel({
               <label>
                 Layer
                 <select value={layerId} onChange={(event) => setLayerId(event.target.value)}>
-                  {workspace.layers.map((layer) => (
-                    <option key={layer.id} value={layer.id}>{layer.name}</option>
-                  ))}
+                  <optgroup label={`Current hunt · ${activeHunt.huntNumber}`}>
+                    {currentHuntLayers.map((layer) => (
+                      <option key={layer.id} value={layer.id}>{layer.name}</option>
+                    ))}
+                  </optgroup>
+                  {otherHuntLayers.length > 0 && (
+                    <optgroup label="Other hunts">
+                      {otherHuntLayers.map((layer) => (
+                        <option key={layer.id} value={layer.id}>{layer.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </label>
               <label>

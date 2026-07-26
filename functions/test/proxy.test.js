@@ -160,12 +160,12 @@ test("oversized POST bodies are rejected before fetch", async () => {
   assert.equal(calls, 0);
 });
 
-test("maps workspace payloads have a larger bounded body allowance", async () => {
+test("global maps library payloads have a larger bounded body allowance", async () => {
   let receivedBytes = 0;
   const accepted = await proxyCommunityRequest(
     {
       method: "POST",
-      originalUrl: "/api/maps/workspace",
+      originalUrl: "/api/maps/library",
       rawBody: Buffer.alloc(64_000),
       headers: { "content-type": "application/json" },
     },
@@ -179,8 +179,8 @@ test("maps workspace payloads have a larger bounded body allowance", async () =>
   const rejected = await proxyCommunityRequest(
     {
       method: "POST",
-      originalUrl: "/api/maps/workspace",
-      rawBody: Buffer.alloc(786_433),
+      originalUrl: "/api/maps/library",
+      rawBody: Buffer.alloc(5_242_881),
       headers: { "content-type": "application/json" },
     },
   );

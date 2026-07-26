@@ -33,7 +33,7 @@ const COMMUNITY_POST_TYPES = new Set([
 ]);
 const COMMUNITY_SORTS = new Set(["active", "new", "top", "unanswered"]);
 const MAX_JSON_BYTES = 16_384;
-const MAX_MAP_JSON_BYTES = 786_432;
+const MAX_MAP_JSON_BYTES = 5_242_880;
 const MAX_SCOUT_SHARES_PER_USER = 50;
 const SCOUT_PIN_TYPES = new Set([
   "water",
@@ -672,6 +672,18 @@ export function validateScoutWorkspace(value) {
     min: 1,
     max: 140,
   });
+  const fallbackHunt = {
+    state,
+    huntNumber,
+    huntName: name,
+    species: normalizePlainText(
+      typeof value.pins?.[0]?.species === "string" ? value.pins[0].species : "",
+      "Hunt species",
+      { max: 60 },
+    ),
+    gender: "",
+    weapon: "",
+  };
   if (!Array.isArray(value.layers) || value.layers.length < 1 || value.layers.length > 50) {
     throw new HttpError(400, "A workspace must contain between 1 and 50 layers.");
   }
@@ -693,12 +705,26 @@ export function validateScoutWorkspace(value) {
     if (!Number.isInteger(layer.sortOrder) || layer.sortOrder < 0 || layer.sortOrder > 49) {
       throw new HttpError(400, "Layer order is invalid.");
     }
+    const normalizedName = normalizePlainText(layer.name, "Layer name", {
+      min: 1,
+      max: 120,
+    });
+    const kind =
+      layer.kind === undefined
+        ? index === 0 && normalizedName.toLowerCase() === "scratch"
+          ? "hunt-default"
+          : "custom"
+        : validateScoutLayerKind(layer.kind);
     return {
       id,
-      name: normalizePlainText(layer.name, "Layer name", { min: 1, max: 48 }),
+      name: normalizedName,
       visible: layer.visible,
       sortOrder: layer.sortOrder,
       color: validateScoutColor(layer.color, "Layer color"),
+      hunt: layer.hunt
+        ? validateScoutHuntContext(layer.hunt)
+        : fallbackHunt,
+      kind,
       createdAt: validateScoutTimestamp(layer.createdAt, "Layer created time"),
       updatedAt: validateScoutTimestamp(layer.updatedAt, "Layer updated time"),
     };
@@ -779,6 +805,221 @@ export function validateScoutWorkspace(value) {
     pins,
     updatedAt: validateScoutTimestamp(value.updatedAt, "Workspace updated time"),
   };
+}
+
+export function validateScoutLibrary(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400, "Scout library must be a JSON object.");
+  }
+  if (value.version !== 2) {
+    throw new HttpError(400, "Scout library version is not supported.");
+  }
+  if (!Array.isArray(value.layers) || value.layers.length > 500) {
+    throw new HttpError(400, "A scout library may contain up to 500 layers.");
+  }
+  if (!Array.isArray(value.pins) || value.pins.length > 10_000) {
+    throw new HttpError(400, "A scout library may contain up to 10,000 pins.");
+  }
+
+  const layerIds = new Set();
+  const huntLayerCounts = new Map();
+  const layers = value.layers.map((layer, index) => {
+    if (!layer || typeof layer !== "object" || Array.isArray(layer)) {
+      throw new HttpError(400, `Layer ${index + 1} is invalid.`);
+    }
+    const id = validateScoutId(layer.id, "Layer ID");
+    if (layerIds.has(id)) throw new HttpError(400, "Layer IDs must be unique.");
+    layerIds.add(id);
+    if (typeof layer.visible !== "boolean") {
+      throw new HttpError(400, "Layer visibility must be true or false.");
+    }
+    if (!Number.isInteger(layer.sortOrder) || layer.sortOrder < 0 || layer.sortOrder > 499) {
+      throw new HttpError(400, "Layer order is invalid.");
+    }
+    const hunt = validateScoutHuntContext(layer.hunt);
+    const huntKey = scoutHuntKey(hunt);
+    const huntLayerCount = (huntLayerCounts.get(huntKey) ?? 0) + 1;
+    if (huntLayerCount > 50) {
+      throw new HttpError(400, "A hunt may contain up to 50 scout layers.");
+    }
+    huntLayerCounts.set(huntKey, huntLayerCount);
+    return {
+      id,
+      name: normalizePlainText(layer.name, "Layer name", { min: 1, max: 120 }),
+      visible: layer.visible,
+      sortOrder: layer.sortOrder,
+      color: validateScoutColor(layer.color, "Layer color"),
+      hunt,
+      kind: validateScoutLayerKind(layer.kind),
+      createdAt: validateScoutTimestamp(layer.createdAt, "Layer created time"),
+      updatedAt: validateScoutTimestamp(layer.updatedAt, "Layer updated time"),
+    };
+  });
+
+  const pinIds = new Set();
+  const layerHunts = new Map(layers.map((layer) => [layer.id, scoutHuntKey(layer.hunt)]));
+  const huntPinCounts = new Map();
+  const pins = value.pins.map((pin, index) => {
+    if (!pin || typeof pin !== "object" || Array.isArray(pin)) {
+      throw new HttpError(400, `Pin ${index + 1} is invalid.`);
+    }
+    const id = validateScoutId(pin.id, "Pin ID");
+    if (pinIds.has(id)) throw new HttpError(400, "Pin IDs must be unique.");
+    pinIds.add(id);
+    const layerId = validateScoutId(pin.layerId, "Pin layer ID");
+    if (!layerIds.has(layerId)) {
+      throw new HttpError(400, "Every pin must belong to a scout layer.");
+    }
+    const huntKey = layerHunts.get(layerId);
+    const huntPinCount = (huntPinCounts.get(huntKey) ?? 0) + 1;
+    if (huntPinCount > 1_000) {
+      throw new HttpError(400, "A hunt may contain up to 1,000 scout pins.");
+    }
+    huntPinCounts.set(huntKey, huntPinCount);
+    if (!SCOUT_PIN_TYPES.has(pin.type)) {
+      throw new HttpError(400, "Choose a valid pin type.");
+    }
+    if (!SCOUT_PIN_STATUSES.has(pin.status)) {
+      throw new HttpError(400, "Choose a valid scouting status.");
+    }
+    if (!SCOUT_WATER_SEASONALITIES.has(pin.waterSeasonality)) {
+      throw new HttpError(400, "Choose a valid water seasonality.");
+    }
+    if (
+      !Number.isInteger(pin.observationYear) ||
+      pin.observationYear < 2000 ||
+      pin.observationYear > new Date().getUTCFullYear() + 1
+    ) {
+      throw new HttpError(400, "Observation year is invalid.");
+    }
+    if (
+      !pin.location ||
+      typeof pin.location !== "object" ||
+      !Number.isFinite(pin.location.latitude) ||
+      pin.location.latitude < -90 ||
+      pin.location.latitude > 90 ||
+      !Number.isFinite(pin.location.longitude) ||
+      pin.location.longitude < -180 ||
+      pin.location.longitude > 180
+    ) {
+      throw new HttpError(400, "Pin coordinates are invalid.");
+    }
+    return {
+      id,
+      layerId,
+      location: {
+        latitude: pin.location.latitude,
+        longitude: pin.location.longitude,
+      },
+      title: normalizePlainText(pin.title, "Pin title", { max: 80 }),
+      type: pin.type,
+      status: pin.status,
+      species: normalizePlainText(pin.species, "Pin species", { max: 60 }),
+      observationYear: pin.observationYear,
+      notes: normalizePlainText(pin.notes, "Pin notes", {
+        max: 2_000,
+        multiline: true,
+      }),
+      waterSeasonality: pin.waterSeasonality,
+      colorOverride:
+        pin.colorOverride === null
+          ? null
+          : validateScoutColor(pin.colorOverride, "Pin color"),
+      createdAt: validateScoutTimestamp(pin.createdAt, "Pin created time"),
+      updatedAt: validateScoutTimestamp(pin.updatedAt, "Pin updated time"),
+    };
+  });
+
+  return {
+    version: 2,
+    layers,
+    pins,
+    updatedAt: validateScoutTimestamp(value.updatedAt, "Scout library updated time"),
+  };
+}
+
+export function scoutLibraryFromWorkspaces(workspaceValues, now = Date.now()) {
+  if (!Array.isArray(workspaceValues)) {
+    throw new HttpError(500, "Saved scout workspaces are invalid.");
+  }
+  const workspaces = workspaceValues.map((workspace) => validateScoutWorkspace(workspace));
+  const layers = [];
+  const pins = [];
+  const layerIds = new Set();
+  const pinIds = new Set();
+
+  for (const workspace of workspaces) {
+    const remappedLayerIds = new Map();
+    workspace.layers.forEach((sourceLayer, index) => {
+      let id = sourceLayer.id;
+      while (layerIds.has(id)) {
+        id = `layer_migrated_${layers.length}_${sourceLayer.id}`.slice(0, 80);
+      }
+      layerIds.add(id);
+      remappedLayerIds.set(sourceLayer.id, id);
+      const isLegacyScratch =
+        sourceLayer.kind === "hunt-default" &&
+        sourceLayer.name.trim().toLowerCase() === "scratch";
+      layers.push({
+        ...sourceLayer,
+        id,
+        name: isLegacyScratch
+          ? defaultScoutLayerName(sourceLayer.hunt)
+          : sourceLayer.name,
+        visible: false,
+        sortOrder: layers.length,
+      });
+    });
+    for (const sourcePin of workspace.pins) {
+      if (pinIds.has(sourcePin.id)) continue;
+      const layerId = remappedLayerIds.get(sourcePin.layerId);
+      if (!layerId) continue;
+      pinIds.add(sourcePin.id);
+      pins.push({ ...sourcePin, layerId });
+    }
+  }
+
+  return validateScoutLibrary({
+    version: 2,
+    layers,
+    pins,
+    updatedAt: Math.max(now, ...workspaces.map((workspace) => workspace.updatedAt)),
+  });
+}
+
+export function scoutWorkspacesFromLibrary(libraryValue) {
+  const library = validateScoutLibrary(libraryValue);
+  const groups = new Map();
+
+  for (const layer of library.layers) {
+    const key = scoutHuntKey(layer.hunt);
+    const group = groups.get(key) ?? {
+      hunt: layer.hunt,
+      layers: [],
+      layerIds: new Set(),
+    };
+    group.layers.push(layer);
+    group.layerIds.add(layer.id);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].map((group) => {
+    const layers = group.layers.map((layer, sortOrder) => ({
+      ...layer,
+      visible: false,
+      sortOrder,
+    }));
+    const pins = library.pins.filter((pin) => group.layerIds.has(pin.layerId));
+    return validateScoutWorkspace({
+      version: 1,
+      state: group.hunt.state,
+      huntNumber: group.hunt.huntNumber,
+      name: group.hunt.huntName,
+      layers,
+      pins,
+      updatedAt: library.updatedAt,
+    });
+  });
 }
 
 export function buildScoutShareDocument(
@@ -878,6 +1119,67 @@ function validateScoutHuntNumber(value) {
     throw new HttpError(400, "Workspace hunt number is invalid.");
   }
   return value.toUpperCase();
+}
+
+function validateScoutHuntContext(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError(400, "Layer hunt details are invalid.");
+  }
+  return {
+    state: validateScoutState(value.state),
+    huntNumber: validateScoutHuntNumber(value.huntNumber),
+    huntName: normalizePlainText(value.huntName, "Hunt name", {
+      min: 1,
+      max: 140,
+    }),
+    species: normalizePlainText(value.species, "Hunt species", { max: 60 }),
+    gender: normalizePlainText(value.gender, "Hunt gender", { max: 60 }),
+    weapon: normalizePlainText(value.weapon, "Hunt weapon", { max: 100 }),
+  };
+}
+
+function validateScoutLayerKind(value) {
+  if (value !== "hunt-default" && value !== "custom") {
+    throw new HttpError(400, "Layer kind is invalid.");
+  }
+  return value;
+}
+
+function scoutHuntKey(hunt) {
+  return `${hunt.state.toLowerCase()}:${hunt.huntNumber.toUpperCase()}`;
+}
+
+function defaultScoutLayerName(hunt) {
+  const animal = [hunt.gender, hunt.species].filter(Boolean).join(" ");
+  const detail = [scoutWeaponAbbreviation(hunt.weapon), animal, hunt.huntName]
+    .filter(Boolean)
+    .join(", ");
+  return `${hunt.huntNumber.toUpperCase()}${detail ? ` · ${detail}` : ""}`.slice(0, 120);
+}
+
+function scoutWeaponAbbreviation(weapon) {
+  const normalized = weapon.trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized.includes("hamss")) return "HAMSS";
+  if (normalized.includes("dedicated hunter")) return "DH";
+  if (normalized.includes("multiseason")) {
+    return normalized.includes("restricted") ? "R-MULTI" : "MULTI";
+  }
+  if (normalized.includes("any legal weapon")) {
+    if (normalized.includes("late")) return "ALW Late";
+    if (normalized.includes("early")) return "ALW Early";
+    return "ALW";
+  }
+  if (normalized.includes("muzzleloader")) {
+    return normalized.includes("restricted") ? "R-MZ" : "MZ";
+  }
+  if (normalized.includes("archery")) {
+    return normalized.includes("restricted") ? "R-ARCH" : "ARCH";
+  }
+  if (normalized.includes("rifle")) {
+    return normalized.includes("restricted") ? "R-RIFLE" : "RIFLE";
+  }
+  return weapon.trim();
 }
 
 function validateScoutId(value, field) {
@@ -1708,6 +2010,7 @@ async function moderateReport(request, db, moderator, reportId) {
 async function handleMapsApi(request, env, url) {
   const pathname = url.pathname.replace(/\/+$/, "") || "/";
   const method = request.method.toUpperCase();
+  const isLibraryRoute = pathname === `${MAPS_API_PREFIX}/library`;
   const isWorkspaceRoute = pathname === `${MAPS_API_PREFIX}/workspace`;
   const isShareCollectionRoute = pathname === `${MAPS_API_PREFIX}/shares`;
   const shareRoute = pathname.match(
@@ -1715,7 +2018,7 @@ async function handleMapsApi(request, env, url) {
   );
 
   let user = null;
-  if (isWorkspaceRoute) {
+  if (isLibraryRoute || isWorkspaceRoute) {
     if (method !== "GET" && method !== "POST") {
       return methodNotAllowed(["GET", "POST"]);
     }
@@ -1734,6 +2037,57 @@ async function handleMapsApi(request, env, url) {
   }
   const db = env.DB;
   await ensureCommunitySchema(db);
+
+  if (isLibraryRoute) {
+    if (method === "GET") {
+      const result = await db
+        .prepare(
+          `SELECT document_json
+           FROM scout_workspaces
+           WHERE owner_id = ?
+           ORDER BY updated_at ASC, id ASC`,
+        )
+        .bind(user.id)
+        .all();
+      const workspaceValues = [];
+      for (const row of result.results ?? []) {
+        try {
+          workspaceValues.push(JSON.parse(row.document_json));
+        } catch {
+          throw new HttpError(500, "Your scout layer library could not be loaded.");
+        }
+      }
+      return jsonResponse({
+        library: scoutLibraryFromWorkspaces(workspaceValues),
+      });
+    }
+
+    const payload = await readJsonObject(request, MAX_MAP_JSON_BYTES);
+    const library = validateScoutLibrary(payload.library);
+    const workspaces = scoutWorkspacesFromLibrary(library);
+    const now = Date.now();
+    const statements = [
+      db.prepare("DELETE FROM scout_workspaces WHERE owner_id = ?").bind(user.id),
+      ...workspaces.map((workspace) => db
+        .prepare(
+          `INSERT INTO scout_workspaces
+            (id, owner_id, state, hunt_number, name, document_json, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          `workspace_${crypto.randomUUID()}`,
+          user.id,
+          workspace.state,
+          workspace.huntNumber,
+          workspace.name,
+          JSON.stringify(workspace),
+          now,
+          now,
+        )),
+    ];
+    await db.batch(statements);
+    return jsonResponse({ library });
+  }
 
   if (isWorkspaceRoute) {
     if (method === "GET") {

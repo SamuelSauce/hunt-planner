@@ -1,42 +1,78 @@
-import { scoutWorkspaceKey, type ScoutWorkspace } from './model'
+import {
+  scoutLibraryFromWorkspaces,
+  type ScoutLibrary,
+  type ScoutWorkspace,
+} from './model'
 
 const DATABASE_NAME = 'hunt-planner-scouting'
 const STORE_NAME = 'guest-drafts'
 const DATABASE_VERSION = 1
+const GLOBAL_LIBRARY_KEY = 'global-library-v2'
 
-export async function loadGuestScoutDraft(state: string, huntNumber: string) {
+export async function loadGuestScoutLibrary() {
   const db = await openDatabase()
   if (!db) return null
-  return new Promise<ScoutWorkspace | null>((resolve) => {
-    const request = db
-      .transaction(STORE_NAME, 'readonly')
-      .objectStore(STORE_NAME)
-      .get(scoutWorkspaceKey(state, huntNumber))
-    request.onsuccess = () => resolve(isScoutWorkspace(request.result) ? request.result : null)
-    request.onerror = () => resolve(null)
-  })
+  const direct = await readValue(db, GLOBAL_LIBRARY_KEY)
+  if (isScoutLibrary(direct)) return direct
+
+  const legacy = await readAllValues(db)
+  const workspaces = legacy.filter(isScoutWorkspace)
+  if (workspaces.length === 0) return null
+
+  const library = scoutLibraryFromWorkspaces(workspaces)
+  await saveGuestScoutLibrary(library)
+  await deleteLegacyDrafts(db)
+  return library
 }
 
-export async function saveGuestScoutDraft(workspace: ScoutWorkspace) {
+export async function saveGuestScoutLibrary(library: ScoutLibrary) {
   const db = await openDatabase()
   if (!db) return
   await new Promise<void>((resolve) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite')
-    transaction.objectStore(STORE_NAME).put(
-      workspace,
-      scoutWorkspaceKey(workspace.state, workspace.huntNumber),
-    )
+    transaction.objectStore(STORE_NAME).put(library, GLOBAL_LIBRARY_KEY)
     transaction.oncomplete = () => resolve()
     transaction.onerror = () => resolve()
   })
 }
 
-export async function clearGuestScoutDraft(state: string, huntNumber: string) {
+export async function clearGuestScoutLibrary() {
   const db = await openDatabase()
   if (!db) return
   await new Promise<void>((resolve) => {
     const transaction = db.transaction(STORE_NAME, 'readwrite')
-    transaction.objectStore(STORE_NAME).delete(scoutWorkspaceKey(state, huntNumber))
+    transaction.objectStore(STORE_NAME).clear()
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => resolve()
+  })
+}
+
+function readValue(db: IDBDatabase, key: IDBValidKey) {
+  return new Promise<unknown>((resolve) => {
+    const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(key)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => resolve(null)
+  })
+}
+
+function readAllValues(db: IDBDatabase) {
+  return new Promise<unknown[]>((resolve) => {
+    const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll()
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => resolve([])
+  })
+}
+
+function deleteLegacyDrafts(db: IDBDatabase) {
+  return new Promise<void>((resolve) => {
+    const transaction = db.transaction(STORE_NAME, 'readwrite')
+    const store = transaction.objectStore(STORE_NAME)
+    const request = store.getAllKeys()
+    request.onsuccess = () => {
+      request.result
+        .filter((key) => key !== GLOBAL_LIBRARY_KEY)
+        .forEach((key) => store.delete(key))
+    }
     transaction.oncomplete = () => resolve()
     transaction.onerror = () => resolve()
   })
@@ -53,6 +89,16 @@ function openDatabase() {
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => resolve(null)
   })
+}
+
+function isScoutLibrary(value: unknown): value is ScoutLibrary {
+  if (!value || typeof value !== 'object') return false
+  const library = value as Partial<ScoutLibrary>
+  return (
+    library.version === 2 &&
+    Array.isArray(library.layers) &&
+    Array.isArray(library.pins)
+  )
 }
 
 function isScoutWorkspace(value: unknown): value is ScoutWorkspace {

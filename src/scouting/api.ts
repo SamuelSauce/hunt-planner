@@ -1,5 +1,5 @@
 import { getFirebaseIdToken } from '../firebase'
-import type { ScoutWorkspace } from './model'
+import type { ScoutLibrary, ScoutWorkspace } from './model'
 
 export type ScoutShare = {
   id: string
@@ -24,24 +24,23 @@ export class ScoutAuthError extends Error {
   }
 }
 
-export async function loadScoutWorkspace(state: string, huntNumber: string) {
-  const params = new URLSearchParams({ state, hunt: huntNumber })
-  const response = await scoutFetch(`/api/maps/workspace?${params}`)
-  const payload = await readResponse<{ workspace: ScoutWorkspace | null }>(response)
-  return payload.workspace
+export async function loadScoutLibrary() {
+  const response = await scoutFetch('/api/maps/library')
+  const payload = await readResponse<{ library: ScoutLibrary }>(response)
+  return payload.library
 }
 
-export async function saveScoutWorkspace(workspace: ScoutWorkspace) {
-  const response = await scoutFetch('/api/maps/workspace', {
+export async function saveScoutLibrary(library: ScoutLibrary) {
+  const response = await scoutFetch('/api/maps/library', {
     method: 'POST',
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ workspace }),
+    body: JSON.stringify({ library }),
   })
-  const payload = await readResponse<{ workspace: ScoutWorkspace }>(response)
-  return payload.workspace
+  const payload = await readResponse<{ library: ScoutLibrary }>(response)
+  return payload.library
 }
 
 export async function createScoutShare(
