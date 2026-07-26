@@ -65,6 +65,11 @@ import {
   type ScoutFilters,
   type ScoutPinDraft,
 } from './scouting/model'
+import {
+  landStatusFromIdentifyResults,
+  type LandStatus,
+  type LandStatusIdentifyResult,
+} from './landStatus'
 
 type Basemap = 'satellite' | 'topographic'
 type LocationStatus = 'idle' | 'locating' | 'error'
@@ -87,6 +92,8 @@ const SCOUT_CLUSTER_LAYER = 'scout-pin-clusters'
 const SCOUT_CLUSTER_COUNT_LAYER = 'scout-pin-cluster-count'
 const SCOUT_PIN_LAYER = 'scout-pins'
 const SCOUT_PIN_LABEL_LAYER = 'scout-pin-labels'
+const LAND_STATUS_IDENTIFY_URL =
+  'https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached_with_PriUnk/MapServer/identify'
 
 const stateCamera: Record<PlannerState, { center: [number, number]; zoom: number }> = {
   utah: { center: [-111.65, 39.35], zoom: 6.6 },
@@ -362,19 +369,20 @@ export function Hunt3DMap({
     const removeShiftPivotGesture = installShiftPivotGesture(map)
     let removeScoutInteractions: () => void = () => undefined
 
-    const fitToHunt = () => {
+    const fitToHunt = (duration = 700) => {
       const bounds = featureBounds(boundaryFeatures)
       if (!bounds) {
-        map.easeTo({
+        const camera = {
           center: initialCamera.center,
           zoom: initialCamera.zoom,
           pitch: 62,
           bearing: -24,
-          duration: 700,
-        })
+        }
+        if (duration === 0) map.jumpTo(camera)
+        else map.easeTo({ ...camera, duration })
         return
       }
-      const compact = window.innerWidth <= 760
+      const compact = window.innerWidth <= 840
       map.fitBounds(bounds, {
         padding: compact
           ? { top: 115, right: 30, bottom: 280, left: 30 }
@@ -382,11 +390,12 @@ export function Hunt3DMap({
         maxZoom: 12.3,
         pitch: 62,
         bearing: -24,
-        duration: 700,
+        duration,
       })
     }
 
-    resetViewRef.current = fitToHunt
+    resetViewRef.current = () => fitToHunt()
+    fitToHunt(0)
     map.on('load', () => {
       if (boundaryFeatures.length > 0) {
         map.addSource('hunt-boundary', {
@@ -449,7 +458,7 @@ export function Hunt3DMap({
           duration: 700,
         })
       } else {
-        fitToHunt()
+        fitToHunt(0)
       }
       setMapReady(true)
     })
@@ -547,7 +556,10 @@ export function Hunt3DMap({
     const map = mapRef.current
     if (!map || !mapReady) return
     map.setTerrain(terrainVisible ? { source: TERRAIN_SOURCE, exaggeration: 1.25 } : null)
-    map.easeTo({ pitch: terrainVisible ? 62 : 0, duration: 500 })
+    const targetPitch = terrainVisible ? 62 : 0
+    if (Math.abs(map.getPitch() - targetPitch) > 0.1) {
+      map.easeTo({ pitch: targetPitch, duration: 500 })
+    }
   }, [mapReady, terrainVisible])
 
   useEffect(() => {
@@ -560,6 +572,12 @@ export function Hunt3DMap({
     const map = mapRef.current
     if (!map || !mapReady) return
     map.setLayoutProperty(LAND_STATUS_LAYER, 'visibility', landStatusVisible ? 'visible' : 'none')
+  }, [landStatusVisible, mapReady])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || !landStatusVisible) return
+    return installLandStatusHover(map)
   }, [landStatusVisible, mapReady])
 
   useEffect(() => {
@@ -921,7 +939,7 @@ export function Hunt3DMap({
                 <span><i className="legend-state" />State / local</span>
                 <span><i className="legend-private" />Private / unknown</span>
               </div>
-              <small>Planning reference from BLM—not a legal parcel survey.</small>
+              <small>Pause your mouse over the map for status. Planning reference from BLM—not a legal parcel survey.</small>
             </div>
           )}
 
@@ -1574,6 +1592,122 @@ function installShiftPivotGesture(map: MapLibreMap) {
     map.off('mousedown', handleMouseDown)
     document.removeEventListener('mousemove', pivotMap)
     document.removeEventListener('mouseup', stopPivoting)
+  }
+}
+
+function installLandStatusHover(map: MapLibreMap) {
+  const content = document.createElement('div')
+  content.className = 'hunt-land-status-content'
+  const eyebrow = document.createElement('span')
+  eyebrow.textContent = 'Land status'
+  const label = document.createElement('strong')
+  const access = document.createElement('small')
+  content.append(eyebrow, label, access)
+
+  const popup = new maplibregl.Popup({
+    anchor: 'top',
+    className: 'hunt-land-status-popup',
+    closeButton: false,
+    closeOnClick: false,
+    closeOnMove: false,
+    focusAfterOpen: false,
+    maxWidth: '260px',
+    offset: [0, 14],
+  }).setDOMContent(content)
+
+  let hoverTimer: number | undefined
+  let request: AbortController | null = null
+  let requestId = 0
+
+  const hidePopup = () => {
+    if (hoverTimer !== undefined) window.clearTimeout(hoverTimer)
+    hoverTimer = undefined
+    request?.abort()
+    request = null
+    requestId += 1
+    popup.remove()
+  }
+
+  const showStatus = (
+    longitude: number,
+    latitude: number,
+    status: LandStatus | null,
+    unavailable = false,
+  ) => {
+    content.dataset.category = status?.category ?? 'unavailable'
+    label.textContent = status?.label ?? (unavailable ? 'Status unavailable' : 'No status reported')
+    access.textContent = status
+      ? status.label === status.agency
+        ? status.access
+        : `${status.agency} · ${status.access}`
+      : unavailable
+        ? 'The BLM reference service did not respond'
+        : 'Verify ownership and access before entering'
+    popup.setLngLat([longitude, latitude]).addTo(map)
+  }
+
+  const identify = async (longitude: number, latitude: number, id: number) => {
+    request?.abort()
+    request = new AbortController()
+    const bounds = map.getBounds()
+    const canvas = map.getCanvas()
+    const parameters = new URLSearchParams({
+      geometry: `${longitude},${latitude}`,
+      geometryType: 'esriGeometryPoint',
+      sr: '4326',
+      layers: 'all:1',
+      tolerance: '0',
+      mapExtent: [
+        bounds.getWest(),
+        bounds.getSouth(),
+        bounds.getEast(),
+        bounds.getNorth(),
+      ].join(','),
+      imageDisplay: `${Math.max(1, canvas.clientWidth)},${Math.max(1, canvas.clientHeight)},96`,
+      returnGeometry: 'false',
+      f: 'json',
+    })
+
+    try {
+      const response = await fetch(`${LAND_STATUS_IDENTIFY_URL}?${parameters}`, {
+        signal: request.signal,
+      })
+      if (!response.ok) throw new Error(`Land status identify ${response.status}`)
+      const data = await response.json() as {
+        results?: LandStatusIdentifyResult[]
+      }
+      if (id !== requestId) return
+      showStatus(
+        longitude,
+        latitude,
+        landStatusFromIdentifyResults(data.results ?? []),
+      )
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (id !== requestId) return
+      showStatus(longitude, latitude, null, true)
+    }
+  }
+
+  const handleMouseMove = (event: maplibregl.MapMouseEvent) => {
+    if (hoverTimer !== undefined) window.clearTimeout(hoverTimer)
+    request?.abort()
+    popup.remove()
+    const { lng, lat } = event.lngLat
+    const id = ++requestId
+    hoverTimer = window.setTimeout(() => {
+      hoverTimer = undefined
+      void identify(lng, lat, id)
+    }, 140)
+  }
+
+  map.on('mousemove', handleMouseMove)
+  map.getCanvas().addEventListener('mouseleave', hidePopup)
+
+  return () => {
+    hidePopup()
+    map.off('mousemove', handleMouseMove)
+    map.getCanvas().removeEventListener('mouseleave', hidePopup)
   }
 }
 
