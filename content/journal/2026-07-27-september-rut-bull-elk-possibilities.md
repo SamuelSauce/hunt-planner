@@ -22,7 +22,7 @@ That question matters in late July 2026 because the seasons are set, Idaho's 202
 
 Three local Hunt Planner records show different ways to buy time in the rut window. [Utah EB3084, Manti](/hunts/utah/elk/eb3084-manti/) is a 12-day limited-entry muzzleloader bull hunt. [Idaho 2134, Area 39](/hunts/idaho/elk/2134-area-39/) is a 32-day antlered-elk muzzleloader hunt awarded through a random controlled drawing. [Wyoming 038-9, Hunt Area 38](/hunts/wyoming/elk/038-9-hunt-area-38/) is an any-elk, archery-only Type 9 hunt covering all of September.
 
-The boundary and stat card above represents **lead hunt Utah EB3084 only**, not the full comparison. Its card combines the connected 2026 season and permit count, final 2024 harvest report and 2025 draw history. Those years differ because Utah's newest official record is not from one common reporting year.
+The card above represents **lead hunt Utah EB3084 only**, not the full comparison. It combines the connected 2026 season and permit count, final 2024 harvest report and 2025 draw history. Those years differ because Utah's newest official record is not from one common reporting year.
 
 ## What the September rut changes
 
