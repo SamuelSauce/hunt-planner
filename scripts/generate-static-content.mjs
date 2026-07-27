@@ -1023,7 +1023,10 @@ function articlePage(article) {
             </div>
           </header>
           <img class="hero-image" src="${escapeHtml(article.data.heroImage)}" width="1200" height="675" alt="${escapeHtml(article.data.heroAlt)}">
-          <p class="image-caption">Hunt Planner orientation graphic derived from the published ${escapeHtml(article.group.state.agency)} hunt boundary. Not for field navigation.</p>
+          <p class="image-caption">${escapeHtml(
+            article.data.heroCaption ||
+              `Hunt Planner orientation graphic derived from the published ${article.group.state.agency} hunt boundary. Not for field navigation.`,
+          )}</p>
           ${statCards(article.group)}
           <aside class="action-band">
             <div><strong>Research ${escapeHtml(article.data.huntNumber)} in Hunt Planner</strong><span>Compare the official data, inspect the boundary or open the terrain in 3D.</span></div>
