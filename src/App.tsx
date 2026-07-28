@@ -2143,17 +2143,7 @@ function getInitialShareState() {
   if (typeof window === 'undefined') return fallback
 
   const params = new URLSearchParams(window.location.search)
-  const stateParam = params.get('state')?.toLowerCase()
-  const state: PlannerState =
-    stateParam === 'wy' || stateParam === 'wyoming'
-      ? 'wyoming'
-      : stateParam === 'id' || stateParam === 'idaho'
-        ? 'idaho'
-        : stateParam === 'co' || stateParam === 'colorado'
-      ? 'colorado'
-      : stateParam === 'ut' || stateParam === 'utah'
-        ? 'utah'
-        : fallback.state
+  const state = normalizePlannerState(params.get('state')) ?? fallback.state
   const huntNumber =
     params.get('hunt') ?? params.get('huntNumber') ?? params.get('HN') ?? ''
   const normalizedHuntNumber = huntNumber.trim().toLowerCase()
@@ -2278,13 +2268,14 @@ function getInitialShareState() {
 }
 
 function normalizePlannerState(value: unknown): PlannerState | null {
-  return value === 'wy' || value === 'wyoming'
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value
+  return normalized === 'wy' || normalized === 'wyoming'
     ? 'wyoming'
-    : value === 'id' || value === 'idaho'
+    : normalized === 'id' || normalized === 'idaho'
       ? 'idaho'
-      : value === 'co' || value === 'colorado'
+      : normalized === 'co' || normalized === 'colorado'
     ? 'colorado'
-    : value === 'ut' || value === 'utah'
+    : normalized === 'ut' || normalized === 'utah'
       ? 'utah'
       : null
 }
@@ -2336,6 +2327,7 @@ function communityPageUrl(hunt?: Hunt | null, compose = false) {
     url.searchParams.set('state', stateCode(normalizePlannerState(hunt.state) ?? 'utah').toUpperCase())
     url.searchParams.set('species', hunt.species)
     url.searchParams.set('hunt', hunt.huntNumber)
+    url.searchParams.set('huntId', hunt.id)
   }
   if (compose) url.searchParams.set('compose', '1')
   return url.toString()

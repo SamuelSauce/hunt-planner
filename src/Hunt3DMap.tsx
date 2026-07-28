@@ -160,6 +160,7 @@ export function Hunt3DMap({
   const huntContext: ScoutHuntContext = useMemo(() => ({
     state: plannerState,
     huntNumber: hunt.huntNumber,
+    huntId: hunt.id,
     huntName: hunt.huntName,
     species: hunt.species,
     gender: hunt.gender,
@@ -167,6 +168,7 @@ export function Hunt3DMap({
   }), [
     hunt.gender,
     hunt.huntName,
+    hunt.id,
     hunt.huntNumber,
     hunt.species,
     hunt.weapon,

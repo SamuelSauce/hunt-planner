@@ -10,11 +10,15 @@ import {
 
 type Hunt = {
   id: string
+  state?: string
   huntNumber: string
+  huntName?: string
   species: string
+  gender?: string
   category: string
   weapon: string
   seasonDateText: string | null
+  mapUnitIds?: string[]
 }
 
 function readHunts(fileName: string) {
@@ -99,7 +103,10 @@ test('Idaho Elk gains useful month choices and each choice narrows the scoped hu
   const options = buildWeaponFilterOptions(controlledElk)
   const anyWeaponMonths = options
     .map((option) => option.value)
-    .filter((value) => value.startsWith('Any Weapon::'))
+    .filter((value) => (
+      value.startsWith('Any Weapon::')
+      && !value.includes('Exact dates ·')
+    ))
 
   assert.ok(anyWeaponMonths.includes('Any Weapon::October'))
   assert.ok(anyWeaponMonths.includes('Any Weapon::November'))
@@ -113,7 +120,40 @@ test('Idaho Elk gains useful month choices and each choice narrows the scoped hu
   }
 })
 
-test('existing Utah Elk season values remain available and Wyoming gains the same behavior', () => {
+test('same-month Idaho boundary collisions gain exact date-range choices', () => {
+  const controlledElk = idahoHunts.filter((hunt) => (
+    hunt.species === 'Elk' && hunt.category === 'limited-entry'
+  ))
+  const values = new Set(
+    buildWeaponFilterOptions(controlledElk).map((option) => option.value),
+  )
+  const firstHalf = 'Any Weapon::Exact dates · 10/1/26 - 10/14/26'
+  const secondHalf = 'Any Weapon::Exact dates · 10/15/26 - 11/10/26'
+
+  assert.ok(values.has('Any Weapon'))
+  assert.ok(values.has('Any Weapon::October'))
+  assert.ok(values.has(firstHalf))
+  assert.ok(values.has(secondHalf))
+  assert.ok(buildWeaponFilterOptions(controlledElk).some((option) => (
+    option.value === firstHalf
+    && option.label === 'Any Weapon — Exact dates · 10/1/26 - 10/14/26'
+  )))
+
+  const area48 = controlledElk.filter((hunt) => hunt.mapUnitIds?.includes('48'))
+  assert.equal(area48.length, 2)
+  assert.deepEqual(
+    area48.filter((hunt) => matchesWeaponFilter(hunt, firstHalf))
+      .map((hunt) => hunt.huntNumber),
+    ['2026'],
+  )
+  assert.deepEqual(
+    area48.filter((hunt) => matchesWeaponFilter(hunt, secondHalf))
+      .map((hunt) => hunt.huntNumber),
+    ['2027'],
+  )
+})
+
+test('Utah keeps month choices while classifying composite and non-date schedules', () => {
   const utahLimitedElk = utahHunts.filter((hunt) => (
     hunt.species === 'Elk' && hunt.category === 'limited-entry'
   ))
@@ -125,6 +165,82 @@ test('existing Utah Elk season values remain available and Wyoming gains the sam
   assert.ok(utahValues.has('Archery::August'))
   assert.ok(utahValues.has('Archery::November'))
 
+  const composite = utahHunts.find((hunt) => hunt.huntNumber === 'EB3102')
+  const missingComposite = utahHunts.find((hunt) => hunt.huntNumber === 'EB3109')
+  const operatorDates = utahHunts.find((hunt) => hunt.huntNumber === 'DA1011')
+  const qualifyingPermit = utahHunts.find((hunt) => hunt.huntNumber === 'EA2000')
+  assert.ok(composite)
+  assert.ok(missingComposite)
+  assert.ok(operatorDates)
+  assert.ok(qualifyingPermit)
+  assert.equal(weaponFilterValue(composite), 'Multiseason::Multiple seasons')
+  assert.equal(
+    weaponFilterValue(missingComposite),
+    'Multiseason::Season date not listed',
+  )
+  assert.equal(
+    weaponFilterValue(operatorDates),
+    'Any Legal Weapon::Dates set by operator',
+  )
+  assert.equal(
+    weaponFilterValue(qualifyingPermit),
+    'Any Legal Weapon::Dates follow qualifying permit',
+  )
+})
+
+test('Utah early and late modifiers remain broad choices but share qualified seasons', () => {
+  const regular = utahHunts.find((hunt) => hunt.huntNumber === 'EB3208')
+  const privateLate = utahHunts.find((hunt) => hunt.huntNumber === 'EL3208')
+  assert.ok(regular)
+  assert.ok(privateLate)
+
+  assert.equal(matchesWeaponFilter(privateLate, 'Any Legal Weapon'), true)
+  assert.equal(matchesWeaponFilter(privateLate, 'Any Legal Weapon (Late)'), true)
+  assert.equal(
+    matchesWeaponFilter(privateLate, 'Any Legal Weapon::December'),
+    true,
+  )
+  assert.equal(weaponFilterValue(regular), 'Any Legal Weapon::December')
+  assert.equal(weaponFilterValue(privateLate), 'Any Legal Weapon::December')
+
+  const options = buildWeaponFilterOptions(
+    utahHunts.filter((hunt) => (
+      hunt.species === 'Elk' && hunt.category === 'limited-entry'
+    )),
+  )
+  assert.equal(
+    options.filter((option) => option.value === 'Any Legal Weapon').length,
+    1,
+  )
+  assert.ok(options.some((option) => (
+    option.value === 'Any Legal Weapon (Late)'
+    && option.label === 'Any Legal Weapon — late seasons'
+  )))
+  assert.ok(options.some((option) => (
+    option.value === 'Early Any Legal Weapon'
+    && option.label === 'Any Legal Weapon — early seasons'
+  )))
+})
+
+test('Wyoming dual-method and archery-only rows belong to their legal method seasons', () => {
+  const dualMethod = wyomingHunts.find((hunt) => hunt.id === 'wy-elk-1-1-0')
+  const archeryOnly = wyomingHunts.find((hunt) => hunt.id === 'wy-elk-60-general-0')
+  const closed = wyomingHunts.find((hunt) => hunt.id === 'wy-elk-72-general-0')
+  assert.ok(dualMethod)
+  assert.ok(archeryOnly)
+  assert.ok(closed)
+
+  assert.equal(
+    matchesWeaponFilter(dualMethod, 'Any Legal Weapon::October'),
+    true,
+  )
+  assert.equal(matchesWeaponFilter(dualMethod, 'Archery::September'), true)
+  assert.equal(matchesWeaponFilter(archeryOnly, 'Archery::September'), true)
+  assert.equal(matchesWeaponFilter(archeryOnly, 'Any Legal Weapon'), false)
+  assert.equal(weaponFilterValue(archeryOnly), 'Archery::September')
+  assert.equal(matchesWeaponFilter(closed, 'Any Legal Weapon'), false)
+  assert.equal(matchesWeaponFilter(closed, 'Closed'), true)
+
   const wyomingElk = wyomingHunts.filter((hunt) => hunt.species === 'Elk')
   const wyomingValues = new Set(
     buildWeaponFilterOptions(wyomingElk).map((option) => option.value),
@@ -132,6 +248,8 @@ test('existing Utah Elk season values remain available and Wyoming gains the sam
   assert.ok(wyomingValues.has('Any Legal Weapon::October'))
   assert.ok(wyomingValues.has('Any Legal Weapon::November'))
   assert.ok(wyomingValues.has('Any Legal Weapon::December'))
+  assert.ok(wyomingValues.has('Archery::September'))
+  assert.ok(wyomingValues.has('Closed'))
 })
 
 test('Colorado hunt codes provide method and numbered-season filters when dates are absent', () => {
@@ -149,7 +267,7 @@ test('Colorado hunt codes provide method and numbered-season filters when dates 
   assert.equal(weaponFilterValue(secondRifle), 'Rifle::2nd season')
   assert.equal(
     weaponFilterValue(privateArchery),
-    'Private-land-only::Archery · 1st season',
+    'Archery::Private-land-only · 1st season',
   )
 
   const coloradoElk = coloradoHunts.filter((hunt) => hunt.species === 'Elk')
@@ -162,6 +280,37 @@ test('Colorado hunt codes provide method and numbered-season filters when dates 
   assert.ok(values.has('Rifle::2nd season'))
   assert.ok(values.has('Rifle::3rd season'))
   assert.ok(values.has('Rifle::4th season'))
+})
+
+test('Colorado access and special-season families retain the actual legal method', () => {
+  const expectations = new Map([
+    ['EE003P1A', ['Archery', 'Archery::Private-land-only · 1st season']],
+    ['EF018P5R', ['Rifle', 'Rifle::Private-land-only · 5th season']],
+    ['EE003W1R', ['Rifle', 'Rifle::Ranching for Wildlife · 1st season']],
+    ['EE001E1R', ['Rifle', 'Rifle::Early · 1st season']],
+    ['EF010L1R', ['Rifle', 'Rifle::Late · 1st season']],
+    ['EE851K2R', ['Rifle', 'Rifle::Youth · 2nd season']],
+  ])
+
+  for (const [huntNumber, [method, qualifiedSeason]] of expectations) {
+    const hunt = coloradoHunts.find((candidate) => candidate.huntNumber === huntNumber)
+    assert.ok(hunt)
+    assert.equal(matchesWeaponFilter(hunt, method), true)
+    assert.equal(weaponFilterValue(hunt), qualifiedSeason)
+  }
+
+  const preferencePointRecord = coloradoHunts.find(
+    (hunt) => hunt.huntNumber === 'EP99999P',
+  )
+  assert.ok(preferencePointRecord)
+  assert.equal(
+    matchesWeaponFilter(preferencePointRecord, 'Method by hunt code'),
+    false,
+  )
+  assert.equal(
+    matchesWeaponFilter(preferencePointRecord, 'Preference point only'),
+    true,
+  )
 })
 
 test('every generated option matches at least one hunt in its scoped data', () => {
