@@ -63,6 +63,7 @@ import {
   mergeScoutLibraries,
   sameScoutHunt,
   scoutLibraryForHunt,
+  scoutLibraryForMap,
   scoutLibraryForPersistence,
   scoutPinsGeoJson,
   scoutWorkspaceFromLibrary,
@@ -114,18 +115,20 @@ function isMobileMapViewport() {
 
 export function Hunt3DMap({
   hunt,
+  plannerState: requestedPlannerState,
   pin,
   shareStatus,
   onPinChange,
   onShare,
   onClose,
 }: {
-  hunt: MapHunt & {
+  hunt: (MapHunt & {
     category: string
     gender: string
     weapon: string
     seasonDateText: string | null
-  }
+  }) | null
+  plannerState?: PlannerState
   pin: MapPinLocation | null
   shareStatus: 'idle' | 'shared' | 'copied' | 'error'
   onPinChange: (pin: MapPinLocation | null) => void
@@ -156,21 +159,20 @@ export function Hunt3DMap({
   const [potentialStatus, setPotentialStatus] = useState<PotentialStatus>('idle')
   const [potentialAnalysis, setPotentialAnalysis] = useState<HuntPotentialAnalysis | null>(null)
   const [pinPopupContainer] = useState(() => document.createElement('div'))
-  const plannerState = hunt.state ?? 'utah'
+  const standalone = hunt === null
+  const plannerState = hunt?.state ?? requestedPlannerState ?? 'utah'
+  const stateName = plannerState[0].toUpperCase() + plannerState.slice(1)
   const huntContext: ScoutHuntContext = useMemo(() => ({
     state: plannerState,
-    huntNumber: hunt.huntNumber,
-    huntName: hunt.huntName,
-    species: hunt.species,
-    gender: hunt.gender,
-    weapon: hunt.weapon,
+    huntNumber: hunt?.huntNumber ?? 'MAP',
+    huntName: hunt?.huntName ?? `${stateName} scouting map`,
+    species: hunt?.species ?? 'General',
+    gender: hunt?.gender ?? '',
+    weapon: hunt?.weapon ?? '',
   }), [
-    hunt.gender,
-    hunt.huntName,
-    hunt.huntNumber,
-    hunt.species,
-    hunt.weapon,
+    hunt,
     plannerState,
+    stateName,
   ])
   const [authStatus, setAuthStatus] = useState<'loading' | 'signed-in' | 'signed-out'>('loading')
   const [authMessage, setAuthMessage] = useState('')
@@ -179,7 +181,9 @@ export function Hunt3DMap({
   const [workspaceStorage, setWorkspaceStorage] = useState<'guest' | 'remote'>('guest')
   const [filters, setFilters] = useState<ScoutFilters>(DEFAULT_SCOUT_FILTERS)
   const [workspace, setWorkspace] = useState(() =>
-    scoutLibraryForHunt(createScoutLibrary(), huntContext),
+    standalone
+      ? scoutLibraryForMap(createScoutLibrary(), huntContext)
+      : scoutLibraryForHunt(createScoutLibrary(), huntContext),
   )
   const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null)
@@ -187,7 +191,9 @@ export function Hunt3DMap({
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [headerExpanded, setHeaderExpanded] = useState(false)
   const lastPersistedWorkspaceRef = useRef('')
-  const dataPath = boundaryDataPath(plannerState, hunt.species, hunt.category)
+  const dataPath = hunt
+    ? boundaryDataPath(plannerState, hunt.species, hunt.category)
+    : null
   const selectedPin = workspace.pins.find((candidate) => candidate.id === selectedPinId) ?? null
   const shareWorkspace = useMemo(
     () => scoutWorkspaceFromLibrary(workspace, huntContext),
@@ -229,7 +235,11 @@ export function Hunt3DMap({
       if (authStatus === 'signed-out') {
         const next = guestDraft ?? createScoutLibrary()
         lastPersistedWorkspaceRef.current = JSON.stringify(scoutLibraryForPersistence(next))
-        setWorkspace(scoutLibraryForHunt(next, huntContext))
+        setWorkspace(
+          standalone
+            ? scoutLibraryForMap(next, huntContext)
+            : scoutLibraryForHunt(next, huntContext),
+        )
         setWorkspaceStorage('guest')
         setPersistenceStatus('local')
         setWorkspaceLoaded(true)
@@ -253,13 +263,21 @@ export function Hunt3DMap({
         }
         if (cancelled) return
         lastPersistedWorkspaceRef.current = JSON.stringify(scoutLibraryForPersistence(next))
-        setWorkspace(scoutLibraryForHunt(next, huntContext))
+        setWorkspace(
+          standalone
+            ? scoutLibraryForMap(next, huntContext)
+            : scoutLibraryForHunt(next, huntContext),
+        )
         setWorkspaceStorage('remote')
         setPersistenceStatus('saved')
       } catch {
         if (cancelled) return
         const next = guestDraft ?? createScoutLibrary()
-        setWorkspace(scoutLibraryForHunt(next, huntContext))
+        setWorkspace(
+          standalone
+            ? scoutLibraryForMap(next, huntContext)
+            : scoutLibraryForHunt(next, huntContext),
+        )
         setWorkspaceStorage('guest')
         setPersistenceStatus('error')
       }
@@ -270,7 +288,7 @@ export function Hunt3DMap({
     return () => {
       cancelled = true
     }
-  }, [authStatus, huntContext])
+  }, [authStatus, huntContext, standalone])
 
   useEffect(() => {
     if (!workspaceLoaded) return
@@ -332,6 +350,11 @@ export function Hunt3DMap({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset stale boundary state before loading the next hunt.
     setBoundaryFeatures(null)
     setBoundaryError(false)
+
+    if (!hunt) {
+      setBoundaryFeatures([])
+      return
+    }
 
     if (!dataPath) {
       setBoundaryFeatures([])
@@ -638,6 +661,7 @@ export function Hunt3DMap({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
+    if (!hunt) return
 
     if (!potentialVisible) {
       setPotentialLayerVisibility(map, false)
@@ -751,7 +775,9 @@ export function Hunt3DMap({
         layers: [
           ...current.layers,
           createScoutLayer(
-            `${hunt.huntNumber} · Layer ${currentHuntLayerCount + 1}`,
+            standalone
+              ? `${stateName} map · Layer ${currentHuntLayerCount + 1}`
+              : `${hunt.huntNumber} · Layer ${currentHuntLayerCount + 1}`,
             current.layers.length,
             huntContext,
           ),
@@ -848,9 +874,9 @@ export function Hunt3DMap({
 
   return (
     <section
-      className={`hunt-3d-modal ${headerExpanded ? 'header-details-open' : ''}`}
-      role="dialog"
-      aria-modal="true"
+      className={`hunt-3d-modal ${standalone ? 'standalone-map' : ''} ${headerExpanded ? 'header-details-open' : ''}`}
+      role={standalone ? 'main' : 'dialog'}
+      aria-modal={standalone ? undefined : 'true'}
       aria-labelledby="hunt-3d-title"
     >
       <div ref={mapContainerRef} className="hunt-3d-map-canvas" />
@@ -860,11 +886,15 @@ export function Hunt3DMap({
           <span className="hunt-3d-compact-mark" aria-hidden="true">3D</span>
           <div>
             <h2 id="hunt-3d-title">
-              <strong>{hunt.huntNumber}</strong>
-              <span>{hunt.huntName}</span>
+              <strong>{standalone ? stateName : hunt.huntNumber}</strong>
+              <span>{standalone ? '3D scouting map' : hunt.huntName}</span>
             </h2>
             {headerExpanded && (
-              <p>{hunt.gender} {hunt.species} · {hunt.weapon || 'Weapon varies'}</p>
+              <p>
+                {standalone
+                  ? 'All your saved layers · no hunt selection required'
+                  : `${hunt.gender} ${hunt.species} · ${hunt.weapon || 'Weapon varies'}`}
+              </p>
             )}
           </div>
           <button
@@ -978,14 +1008,16 @@ export function Hunt3DMap({
               checked={reliefVisible}
               onChange={setReliefVisible}
             />
-            <LayerToggle
-              icon={<Crosshair size={17} aria-hidden="true" />}
-              label="Hunt boundary"
-              detail={boundaryFeatures?.length ? `${boundaryFeatures.length} mapped area${boundaryFeatures.length === 1 ? '' : 's'}` : 'No matching polygon'}
-              checked={huntBoundaryVisible}
-              disabled={!boundaryFeatures?.length}
-              onChange={setHuntBoundaryVisible}
-            />
+            {!standalone && (
+              <LayerToggle
+                icon={<Crosshair size={17} aria-hidden="true" />}
+                label="Hunt boundary"
+                detail={boundaryFeatures?.length ? `${boundaryFeatures.length} mapped area${boundaryFeatures.length === 1 ? '' : 's'}` : 'No matching polygon'}
+                checked={huntBoundaryVisible}
+                disabled={!boundaryFeatures?.length}
+                onChange={setHuntBoundaryVisible}
+              />
+            )}
             <LayerToggle
               icon={<Layers3 size={17} aria-hidden="true" />}
               label="Land status"
@@ -993,14 +1025,16 @@ export function Hunt3DMap({
               checked={landStatusVisible}
               onChange={setLandStatusVisible}
             />
-            <LayerToggle
-              icon={<Sparkles size={17} aria-hidden="true" />}
-              label="AI terrain scout"
-              detail={potentialStatus === 'analyzing' ? 'Analyzing terrain…' : 'Potential zones & reasons'}
-              checked={potentialVisible}
-              disabled={!boundaryFeatures?.length || !mapReady}
-              onChange={togglePotential}
-            />
+            {!standalone && (
+              <LayerToggle
+                icon={<Sparkles size={17} aria-hidden="true" />}
+                label="AI terrain scout"
+                detail={potentialStatus === 'analyzing' ? 'Analyzing terrain…' : 'Potential zones & reasons'}
+                checked={potentialVisible}
+                disabled={!boundaryFeatures?.length || !mapReady}
+                onChange={togglePotential}
+              />
+            )}
           </div>
 
           {landStatusVisible && (
@@ -1033,7 +1067,8 @@ export function Hunt3DMap({
             editorOpen={pinEditorOpen}
             draftLocation={pin}
             selectedPin={selectedPin}
-            species={hunt.species}
+            species={hunt?.species ?? 'General'}
+            globalMode={standalone}
             onFiltersChange={setFilters}
             onAddLayer={handleAddLayer}
             onRenameLayer={handleRenameLayer}
@@ -1120,18 +1155,20 @@ export function Hunt3DMap({
         pinPopupContainer,
       )}
 
-      <div className="hunt-3d-boundary-key">
-        <i />
-        <div>
-          <strong>{hunt.huntName}</strong>
-          <span>{hunt.seasonDateText || 'Season dates not listed'}</span>
+      {!standalone && (
+        <div className="hunt-3d-boundary-key">
+          <i />
+          <div>
+            <strong>{hunt.huntName}</strong>
+            <span>{hunt.seasonDateText || 'Season dates not listed'}</span>
+          </div>
         </div>
-      </div>
+      )}
 
       {!mapReady && !mapError && (
         <div className="hunt-3d-loading" role="status">
           <LoaderCircle className="spin" size={25} aria-hidden="true" />
-          <span>Building 3D terrain and hunt layers…</span>
+          <span>{standalone ? 'Opening your 3D map and scout layers…' : 'Building 3D terrain and hunt layers…'}</span>
         </div>
       )}
 
@@ -1142,7 +1179,7 @@ export function Hunt3DMap({
         </div>
       )}
 
-      {(boundaryError || (boundaryFeatures !== null && boundaryFeatures.length === 0)) && mapReady && (
+      {!standalone && (boundaryError || (boundaryFeatures !== null && boundaryFeatures.length === 0)) && mapReady && (
         <div className="hunt-3d-boundary-warning">
           The 3D basemap is ready, but this hunt does not have a matching boundary polygon yet.
         </div>

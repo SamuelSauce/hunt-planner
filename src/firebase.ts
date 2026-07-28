@@ -8,6 +8,7 @@ import {
   signInWithRedirect,
   signOut,
   type Auth,
+  type User,
 } from 'firebase/auth'
 
 const firebaseConfig = {
@@ -33,11 +34,21 @@ export function subscribeToFirebaseAuth(
   onChange: (signedIn: boolean) => void,
   onError: (error: unknown) => void,
 ) {
+  return subscribeToFirebaseUser(
+    (user) => onChange(Boolean(user)),
+    onError,
+  )
+}
+
+export function subscribeToFirebaseUser(
+  onChange: (user: User | null) => void,
+  onError: (error: unknown) => void,
+) {
   const auth = getFirebaseAuth()
   void getRedirectResult(auth).catch(onError)
   return onAuthStateChanged(
     auth,
-    (user) => onChange(Boolean(user)),
+    onChange,
     onError,
   )
 }

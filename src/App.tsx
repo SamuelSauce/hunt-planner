@@ -2,9 +2,13 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bug,
   CalendarDays,
+  ChevronRight,
+  Compass,
   ExternalLink,
   FileText,
+  Library,
   Mail,
+  Menu,
   Mountain,
   MapPinned,
   MessageSquare,
@@ -14,6 +18,8 @@ import {
   SlidersHorizontal,
   Target,
   Trophy,
+  UserRound,
+  X,
 } from 'lucide-react'
 import plannerData from './data/udwr-data.json'
 import coloradoPlannerData from './data/cpw-data.json'
@@ -30,6 +36,7 @@ import {
 } from './landAccess'
 import { formatMapPin, parseMapPin, type MapPinLocation } from './mapPin'
 import { MapExplorer } from './MapExplorer'
+import { ProfilePage } from './ProfilePage'
 import './App.css'
 
 const Hunt3DMap = lazy(() =>
@@ -55,7 +62,7 @@ type Category =
 type SortMode = 'draw' | 'opportunity' | 'success' | 'season' | 'quota'
 type ShareResult = 'shared' | 'copied' | 'dismissed'
 type ShareStatus = 'idle' | 'shared' | 'copied' | 'error'
-type AppView = 'planner' | 'community' | 'contact'
+type AppView = 'planner' | 'map' | 'community' | 'profile' | 'contact'
 type ContactReason = 'data-issue' | 'question' | 'feedback'
 
 type PlannerFilters = {
@@ -344,7 +351,9 @@ function PlannerApp() {
     view === 'planner' && initialShare.open3D ? initialShare.hunt : null,
   )
   const [map3dPin, setMap3dPin] = useState<MapPinLocation | null>(
-    view === 'planner' && initialShare.open3D ? initialShare.pin : null,
+    (view === 'planner' && initialShare.open3D) || view === 'map'
+      ? initialShare.pin
+      : null,
   )
   const [mapShareStatus, setMapShareStatus] = useState<ShareStatus>('idle')
   const [cardShareStatus, setCardShareStatus] = useState<{
@@ -370,7 +379,11 @@ function PlannerApp() {
       setLandAccess(nextShare.landAccess)
       setSelectedId(nextShare.hunt?.id ?? null)
       setMap3dHunt(nextView === 'planner' && nextShare.open3D ? nextShare.hunt : null)
-      setMap3dPin(nextView === 'planner' && nextShare.open3D ? nextShare.pin : null)
+      setMap3dPin(
+        (nextView === 'planner' && nextShare.open3D) || nextView === 'map'
+          ? nextShare.pin
+          : null,
+      )
       setMapShareStatus('idle')
     }
     window.addEventListener('popstate', handlePopState)
@@ -511,6 +524,8 @@ function PlannerApp() {
     : '/'
   const communityHref = communityPageUrl()
   const contactHref = contactPageUrl()
+  const mapHref = mapPageUrl(plannerState)
+  const profileHref = profilePageUrl()
   const navigateWithinApp = (event: React.MouseEvent<HTMLAnchorElement>, nextView: AppView, href: string) => {
     event.preventDefault()
     window.history.pushState(null, '', href)
@@ -583,6 +598,14 @@ function PlannerApp() {
     setMapShareStatus('idle')
     setMap3dHunt(null)
   }
+  const closeStandaloneMap = () => {
+    setMap3dPin(null)
+    setMapShareStatus('idle')
+    const href = plannerHref
+    window.history.pushState(null, '', href)
+    setView('planner')
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
   const shareHunt3DMap = (hunt: Hunt, pin: MapPinLocation | null) => {
     shareHunt3DMapLink(hunt, residency, { species, category, weapon, landAccess }, pin)
       .then((result) => {
@@ -605,77 +628,41 @@ function PlannerApp() {
         window.setTimeout(() => setMapShareStatus('idle'), 2200)
       })
   }
+  const shareStandalone3DMap = (pin: MapPinLocation | null) => {
+    shareStandalone3DMapLink(plannerState, pin)
+      .then((result) => {
+        if (result === 'dismissed') {
+          setMapShareStatus('idle')
+          return
+        }
+        trackEvent('share_3d_map_workspace', {
+          result,
+          state: plannerState,
+          includes_pin: Boolean(pin),
+        })
+        setMapShareStatus(result)
+        window.setTimeout(() => setMapShareStatus('idle'), 1600)
+      })
+      .catch(() => {
+        setMapShareStatus('error')
+        window.setTimeout(() => setMapShareStatus('idle'), 2200)
+      })
+  }
 
   return (
     <div className={`app-shell state-${plannerState}`}>
-      <header className="app-header">
-        <div className="brand">
-          <div className="brand-mark">
-            <MapPinned size={26} aria-hidden="true" />
-          </div>
-          <div>
-            <p className="eyebrow">
-              {view === 'community' ? 'Western hunt research' : activeMeta.eyebrow}
-            </p>
-            <h1>{view === 'community' ? 'Hunt Planner' : activeMeta.title}</h1>
-          </div>
-        </div>
-        <div className="header-actions">
-          {view === 'planner' && (
-            <>
-              <div className="state-switcher" aria-label="Planner state">
-                {stateOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={option.value === plannerState ? 'active' : ''}
-                    onClick={() => changePlannerState(option.value)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <a href={activeMeta.primarySourceUrl} target="_blank" rel="noreferrer">
-                {activeMeta.primarySourceLabel}
-                <ExternalLink size={15} aria-hidden="true" />
-              </a>
-              <a href={activeMeta.secondarySourceUrl} target="_blank" rel="noreferrer">
-                {activeMeta.secondarySourceLabel}
-                <ExternalLink size={15} aria-hidden="true" />
-              </a>
-            </>
-          )}
-          <a href="/hunts/">
-            Hunt library
-            <Target size={15} aria-hidden="true" />
-          </a>
-          <a href="/journal/">
-            Journal
-            <FileText size={15} aria-hidden="true" />
-          </a>
-          {view !== 'planner' && (
-            <a href={plannerHref} onClick={(event) => navigateWithinApp(event, 'planner', plannerHref)}>
-              Planner
-              <MapPinned size={15} aria-hidden="true" />
-            </a>
-          )}
-          {view !== 'community' && (
-            <a
-              href={communityHref}
-              onClick={(event) => navigateWithinApp(event, 'community', communityHref)}
-            >
-              Community
-              <MessageSquare size={15} aria-hidden="true" />
-            </a>
-          )}
-          {view !== 'contact' && (
-            <a href={contactHref} onClick={(event) => navigateWithinApp(event, 'contact', contactHref)}>
-              Contact
-              <Mail size={15} aria-hidden="true" />
-            </a>
-          )}
-        </div>
-      </header>
+      <AppHeader
+        view={view}
+        activeMeta={activeMeta}
+        plannerState={plannerState}
+        plannerHref={plannerHref}
+        mapHref={mapHref}
+        communityHref={communityHref}
+        profileHref={profileHref}
+        contactHref={contactHref}
+        onChangeState={changePlannerState}
+        onNavigate={navigateWithinApp}
+      />
 
       {view === 'contact' ? (
         <ContactPage
@@ -685,9 +672,16 @@ function PlannerApp() {
           plannerHref={plannerHref}
           onPlannerClick={(event) => navigateWithinApp(event, 'planner', plannerHref)}
         />
+      ) : view === 'profile' ? (
+        <ProfilePage
+          plannerHref={plannerHref}
+          mapHref={mapHref}
+          onPlannerClick={(event) => navigateWithinApp(event, 'planner', plannerHref)}
+          onMapClick={(event) => navigateWithinApp(event, 'map', mapHref)}
+        />
       ) : view === 'community' ? (
         <CommunityBoard />
-      ) : (
+      ) : view === 'planner' ? (
       <main id="planner" className="planner-grid">
         <MapExplorer
           plannerState={plannerState}
@@ -936,7 +930,7 @@ function PlannerApp() {
           )}
         </aside>
       </main>
-      )}
+      ) : null}
       {map3dHunt && (
         <Suspense
           fallback={(
@@ -961,7 +955,235 @@ function PlannerApp() {
           />
         </Suspense>
       )}
+      {view === 'map' && !map3dHunt && (
+        <Suspense
+          fallback={(
+            <div className="hunt-3d-modal standalone-map">
+              <div className="hunt-3d-loading" role="status">
+                <Mountain size={25} aria-hidden="true" />
+                <span>Opening your 3D map…</span>
+              </div>
+            </div>
+          )}
+        >
+          <Hunt3DMap
+            hunt={null}
+            plannerState={plannerState}
+            pin={map3dPin}
+            shareStatus={mapShareStatus}
+            onPinChange={(pin) => {
+              setMap3dPin(pin)
+              setMapShareStatus('idle')
+              replaceStandaloneMapUrl(plannerState, pin)
+            }}
+            onShare={shareStandalone3DMap}
+            onClose={closeStandaloneMap}
+          />
+        </Suspense>
+      )}
     </div>
+  )
+}
+
+function AppHeader({
+  view,
+  activeMeta,
+  plannerState,
+  plannerHref,
+  mapHref,
+  communityHref,
+  profileHref,
+  contactHref,
+  onChangeState,
+  onNavigate,
+}: {
+  view: AppView
+  activeMeta: (typeof stateMeta)[PlannerState]
+  plannerState: PlannerState
+  plannerHref: string
+  mapHref: string
+  communityHref: string
+  profileHref: string
+  contactHref: string
+  onChangeState: (state: PlannerState) => void
+  onNavigate: (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    view: AppView,
+    href: string,
+  ) => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const headerEyebrow =
+    view === 'planner'
+      ? activeMeta.eyebrow
+      : view === 'map'
+        ? '3D scouting workspace'
+        : view === 'community'
+          ? 'Western hunt research'
+          : view === 'profile'
+            ? 'Private workspace'
+            : 'Help and feedback'
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [menuOpen])
+
+  const navigate = (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    nextView: AppView,
+    href: string,
+  ) => {
+    setMenuOpen(false)
+    onNavigate(event, nextView, href)
+  }
+
+  return (
+    <header className="app-header">
+      <a
+        className="brand"
+        href={plannerHref}
+        onClick={(event) => navigate(event, 'planner', plannerHref)}
+      >
+        <span className="brand-mark">
+          <MapPinned size={26} aria-hidden="true" />
+        </span>
+        <span>
+          <span className="eyebrow">{headerEyebrow}</span>
+          <span className="brand-title">{view === 'planner' ? activeMeta.title : 'Hunt Planner'}</span>
+        </span>
+      </a>
+
+      <div className="header-actions">
+        <div className="state-switcher" aria-label="Planner state">
+          {stateOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={option.value === plannerState ? 'active' : ''}
+              aria-pressed={option.value === plannerState}
+              onClick={() => onChangeState(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="header-menu" ref={menuRef}>
+          <button
+            className="header-menu-trigger"
+            type="button"
+            aria-expanded={menuOpen}
+            aria-controls="site-menu"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? <X size={19} aria-hidden="true" /> : <Menu size={19} aria-hidden="true" />}
+            <span>Menu</span>
+          </button>
+
+          {menuOpen && (
+            <nav id="site-menu" className="header-menu-popover" aria-label="Hunt Planner">
+              <div className="header-menu-heading">
+                <div>
+                  <span>Explore</span>
+                  <small>{activeMeta.name} workspace</small>
+                </div>
+                <Compass size={20} aria-hidden="true" />
+              </div>
+
+              <div className="header-menu-section primary">
+                <a
+                  className={view === 'map' ? 'active' : ''}
+                  href={mapHref}
+                  onClick={(event) => navigate(event, 'map', mapHref)}
+                >
+                  <span className="header-menu-icon"><Mountain size={19} aria-hidden="true" /></span>
+                  <span>
+                    <strong>3D map</strong>
+                    <small>Open all your scout layers</small>
+                  </span>
+                  <ChevronRight size={17} aria-hidden="true" />
+                </a>
+                <a
+                  className={view === 'planner' ? 'active' : ''}
+                  href={plannerHref}
+                  onClick={(event) => navigate(event, 'planner', plannerHref)}
+                >
+                  <span className="header-menu-icon"><MapPinned size={19} aria-hidden="true" /></span>
+                  <span>
+                    <strong>Hunt planner</strong>
+                    <small>Compare hunts and boundaries</small>
+                  </span>
+                  <ChevronRight size={17} aria-hidden="true" />
+                </a>
+              </div>
+
+              <div className="header-menu-section">
+                <span className="header-menu-label">Research</span>
+                <a href="/hunts/" onClick={() => setMenuOpen(false)}>
+                  <Library size={17} aria-hidden="true" />
+                  <span>Hunt library</span>
+                </a>
+                <a href="/journal/" onClick={() => setMenuOpen(false)}>
+                  <FileText size={17} aria-hidden="true" />
+                  <span>Journal</span>
+                </a>
+                <a href={activeMeta.primarySourceUrl} target="_blank" rel="noreferrer">
+                  <Target size={17} aria-hidden="true" />
+                  <span>{activeMeta.primarySourceLabel}</span>
+                  <ExternalLink size={14} aria-hidden="true" />
+                </a>
+                <a href={activeMeta.secondarySourceUrl} target="_blank" rel="noreferrer">
+                  <FileText size={17} aria-hidden="true" />
+                  <span>{activeMeta.secondarySourceLabel}</span>
+                  <ExternalLink size={14} aria-hidden="true" />
+                </a>
+              </div>
+
+              <div className="header-menu-section">
+                <span className="header-menu-label">Community & account</span>
+                <a
+                  className={view === 'community' ? 'active' : ''}
+                  href={communityHref}
+                  onClick={(event) => navigate(event, 'community', communityHref)}
+                >
+                  <MessageSquare size={17} aria-hidden="true" />
+                  <span>Community</span>
+                </a>
+                <a
+                  className={view === 'profile' ? 'active' : ''}
+                  href={profileHref}
+                  onClick={(event) => navigate(event, 'profile', profileHref)}
+                >
+                  <UserRound size={17} aria-hidden="true" />
+                  <span>Profile & sign in</span>
+                </a>
+                <a
+                  className={view === 'contact' ? 'active' : ''}
+                  href={contactHref}
+                  onClick={(event) => navigate(event, 'contact', contactHref)}
+                >
+                  <Mail size={17} aria-hidden="true" />
+                  <span>Contact</span>
+                </a>
+              </div>
+            </nav>
+          )}
+        </div>
+      </div>
+    </header>
   )
 }
 
@@ -2110,7 +2332,9 @@ function quotaText(hunt: Hunt) {
 function getInitialView(): AppView {
   if (typeof window === 'undefined') return 'planner'
   const pathname = window.location.pathname.replace(/\/+$/, '') || '/'
+  if (pathname === '/map') return 'map'
   if (pathname === '/community' || pathname.startsWith('/community/')) return 'community'
+  if (pathname === '/account' || pathname === '/profile') return 'profile'
   return pathname === '/contact' ? 'contact' : 'planner'
 }
 
@@ -2249,7 +2473,8 @@ function getInitialShareState() {
           : 'public-mixed'
     )
     : 'all'
-  const open3D = params.get('view') === '3d' && hunt !== null
+  const standaloneMap = window.location.pathname.replace(/\/+$/, '') === '/map'
+  const open3D = (params.get('view') === '3d' && hunt !== null) || standaloneMap
   const pin = open3D ? parseMapPin(params.get('pin')) : null
 
   return {
@@ -2314,6 +2539,17 @@ function contactPageUrl(hunt?: Hunt | null, residency?: Residency) {
     url.searchParams.set('residency', residency)
   }
   return url.toString()
+}
+
+function mapPageUrl(state: PlannerState, pin: MapPinLocation | null = null) {
+  const url = appUrl('/map')
+  url.searchParams.set('state', stateCode(state))
+  if (pin) url.searchParams.set('pin', formatMapPin(pin))
+  return url.toString()
+}
+
+function profilePageUrl() {
+  return appUrl('/account').toString()
 }
 
 function communityPageUrl(hunt?: Hunt | null, compose = false) {
@@ -2391,6 +2627,14 @@ function replaceShareUrl(
   }
 }
 
+function replaceStandaloneMapUrl(state: PlannerState, pin: MapPinLocation | null) {
+  if (typeof window === 'undefined') return
+  const nextUrl = mapPageUrl(state, pin)
+  if (nextUrl !== window.location.href) {
+    window.history.replaceState(window.history.state, '', nextUrl)
+  }
+}
+
 async function shareHuntLink(
   hunt: Hunt,
   residency: Residency,
@@ -2401,6 +2645,36 @@ async function shareHuntLink(
   const shareData = {
     title: `${stateLabel} Hunt Planner: ${hunt.huntName}`,
     text: `${hunt.huntNumber} - ${hunt.weapon || 'hunt'} for ${residencyLabel(residency).toLowerCase()} draw and harvest details.`,
+    url: shareUrl,
+  }
+
+  if (
+    typeof navigator !== 'undefined' &&
+    navigator.share &&
+    (!navigator.canShare || navigator.canShare(shareData))
+  ) {
+    try {
+      await navigator.share(shareData)
+      return 'shared'
+    } catch (error) {
+      if (isShareDismissal(error)) return 'dismissed'
+    }
+  }
+
+  await copyTextToClipboard(shareUrl)
+  return 'copied'
+}
+
+async function shareStandalone3DMapLink(
+  state: PlannerState,
+  pin: MapPinLocation | null,
+): Promise<ShareResult> {
+  const shareUrl = mapPageUrl(state, pin)
+  const shareData = {
+    title: `${stateMeta[state].name} 3D scouting map${pin ? ' pin' : ''}`,
+    text: pin
+      ? `Open my marked location in the ${stateMeta[state].name} 3D scouting workspace.`
+      : `Explore the ${stateMeta[state].name} 3D map and scout layers.`,
     url: shareUrl,
   }
 

@@ -47,6 +47,7 @@ export function ScoutingPanel({
   draftLocation,
   selectedPin,
   species,
+  globalMode = false,
   onFiltersChange,
   onAddLayer,
   onRenameLayer,
@@ -70,6 +71,7 @@ export function ScoutingPanel({
   draftLocation: MapPinLocation | null
   selectedPin: ScoutPin | null
   species: string
+  globalMode?: boolean
   onFiltersChange: (filters: ScoutFilters) => void
   onAddLayer: () => void
   onRenameLayer: (layerId: string, name: string) => void
@@ -98,18 +100,18 @@ export function ScoutingPanel({
   const [otherLayerQuery, setOtherLayerQuery] = useState('')
   const currentHuntLayers = useMemo(
     () => workspace.layers
-      .filter((layer) => sameScoutHunt(layer.hunt, activeHunt))
+      .filter((layer) => globalMode || sameScoutHunt(layer.hunt, activeHunt))
       .sort((a, b) => a.sortOrder - b.sortOrder),
-    [activeHunt, workspace.layers],
+    [activeHunt, globalMode, workspace.layers],
   )
   const otherHuntLayers = useMemo(
-    () => workspace.layers
+    () => globalMode ? [] : workspace.layers
       .filter((layer) => !sameScoutHunt(layer.hunt, activeHunt))
       .sort((a, b) => (
         a.hunt.huntNumber.localeCompare(b.hunt.huntNumber) ||
         a.sortOrder - b.sortOrder
       )),
-    [activeHunt, workspace.layers],
+    [activeHunt, globalMode, workspace.layers],
   )
   const filteredOtherHuntLayers = useMemo(() => {
     const query = otherLayerQuery.trim().toLowerCase()
@@ -121,7 +123,9 @@ export function ScoutingPanel({
     ))
   }, [otherHuntLayers, otherLayerQuery])
   const defaultLayerId = currentHuntLayers
-    .find((layer) => layer.kind === 'hunt-default')?.id ??
+    .find(
+      (layer) => layer.kind === 'hunt-default' && sameScoutHunt(layer.hunt, activeHunt),
+    )?.id ??
     currentHuntLayers[0]?.id ??
     workspace.layers[0]?.id ??
     ''
@@ -301,10 +305,13 @@ export function ScoutingPanel({
       </div>
 
       <div className="scout-layer-library">
-        <section className="scout-layer-group" aria-label={`Layers for ${activeHunt.huntNumber}`}>
+        <section
+          className="scout-layer-group"
+          aria-label={globalMode ? 'All scout layers' : `Layers for ${activeHunt.huntNumber}`}
+        >
           <div className="scout-layer-group-heading">
-            <span>Current layers</span>
-            <small>{activeHunt.huntNumber}</small>
+            <span>{globalMode ? 'All layers' : 'Current layers'}</span>
+            <small>{globalMode ? currentHuntLayers.length : activeHunt.huntNumber}</small>
           </div>
           <div className="scout-layer-list">
             {currentHuntLayers.map(layerRow)}
@@ -424,7 +431,7 @@ export function ScoutingPanel({
               <label>
                 Layer
                 <select value={layerId} onChange={(event) => setLayerId(event.target.value)}>
-                  <optgroup label={`Current layers · ${activeHunt.huntNumber}`}>
+                  <optgroup label={globalMode ? 'All layers' : `Current layers · ${activeHunt.huntNumber}`}>
                     {currentHuntLayers.map((layer) => (
                       <option key={layer.id} value={layer.id}>{layer.name}</option>
                     ))}
