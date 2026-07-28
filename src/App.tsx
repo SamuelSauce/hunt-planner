@@ -22,6 +22,7 @@ import wyomingPlannerData from './data/wgfd-data.json'
 import { initAnalytics, trackEvent } from './analytics'
 import { CommunityBoard } from './community/CommunityBoard'
 import { estimateP50Draw, opportunityScore, type DrawTimeEstimate } from './drawMetrics'
+import siteConfig from '../site.config.json'
 import {
   defaultLandAccessForHunt,
   landAccessOptions,
@@ -2329,7 +2330,7 @@ function communityPageUrl(hunt?: Hunt | null, compose = false) {
 
 function appUrl(pathname: string) {
   if (typeof window === 'undefined') {
-    return new URL(pathname, 'https://huntplanner-66d5e.web.app')
+    return new URL(pathname, siteConfig.canonicalOrigin)
   }
   return new URL(pathname, window.location.origin)
 }

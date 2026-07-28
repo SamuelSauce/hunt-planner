@@ -5,6 +5,8 @@ const FIREBASE_IDENTITY_LOOKUP_URL =
   "https://identitytoolkit.googleapis.com/v1/accounts:lookup";
 const FIREBASE_WEB_API_KEY = "AIzaSyBpuyQXJ6HIthnLBIyT7tDLqiIaVS070gw";
 const COMMUNITY_ALLOWED_ORIGINS = new Set([
+  "https://huntplanner.web.app",
+  "https://huntplanner.firebaseapp.com",
   "https://huntplanner-66d5e.web.app",
   "https://huntplanner-66d5e.firebaseapp.com",
   "https://hunt-planner-seo-preview.samuelfbridge.chatgpt.site",

@@ -3,7 +3,7 @@
 An unofficial, data-driven website for comparing big-game hunts across Utah,
 Colorado, Idaho, and Wyoming.
 
-**Live site:** [huntplanner-66d5e.web.app](https://huntplanner-66d5e.web.app)
+**Live site:** [huntplanner.web.app](https://huntplanner.web.app)
 
 ## What is included
 
@@ -63,9 +63,9 @@ labels when available, verify the final diff and required checks, merge the pull
 request, fast-forward the local `main`, rebuild, and deploy that exact
 post-merge output to Firebase Hosting.
 
-Set `SITE_URL` when building for a different canonical host. The Search Console
-verification token is persisted in the application home page and static
-generator. `GOOGLE_SITE_VERIFICATION` can override it for another deployment.
+The canonical public origin and site identity live in `site.config.json`.
+`SITE_URL` can temporarily override the canonical origin during a static-content
+build, and `GOOGLE_SITE_VERIFICATION` can override the Search Console token.
 
 ## Refreshing source data
 
@@ -110,6 +110,10 @@ Hosting:
 npm run build
 firebase deploy --only hosting
 ```
+
+The Firebase configuration publishes the canonical site at
+`huntplanner.web.app` and keeps the former generated hostname as a permanent
+path-preserving redirect.
 
 ## Data notes
 

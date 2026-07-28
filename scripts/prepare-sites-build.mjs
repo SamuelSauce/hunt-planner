@@ -6,6 +6,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
 const CLIENT = path.join(DIST, 'client')
 const SERVER = path.join(DIST, 'server')
+const LEGACY = path.join(DIST, 'legacy')
 const HOSTING = path.join(ROOT, '.openai', 'hosting.json')
 const WORKER = path.join(ROOT, 'worker', 'index.js')
 
@@ -21,5 +22,10 @@ if (!fs.existsSync(WORKER)) {
 
 fs.mkdirSync(SERVER, { recursive: true })
 fs.copyFileSync(WORKER, path.join(SERVER, 'index.js'))
+fs.mkdirSync(LEGACY, { recursive: true })
+fs.writeFileSync(
+  path.join(LEGACY, 'index.html'),
+  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Hunt Planner has moved</title></head><body><p>Hunt Planner has moved to <a href="https://huntplanner.web.app/">huntplanner.web.app</a>.</p></body></html>',
+)
 
 console.log('Prepared the validated Sites build with the Community API worker.')
