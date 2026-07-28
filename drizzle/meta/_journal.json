@@ -22,6 +22,13 @@
       "when": 1784995200000,
       "tag": "0002_scout_shares",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785254400000,
+      "tag": "0003_community_hunt_ids",
+      "breakpoints": true
     }
   ]
 }

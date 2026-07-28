@@ -368,7 +368,7 @@ export function MapExplorer({
             ) : (
               <>
                 <h3>No mapped matches</h3>
-                <span>Try a broader hunt type or weapon filter.</span>
+                <span>Try a broader hunt type, weapon, or season filter.</span>
               </>
             )}
             <small>Hover or tap a highlighted boundary to preview it. Choose from the overlap list when hunt areas stack.</small>

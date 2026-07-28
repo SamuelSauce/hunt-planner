@@ -24,6 +24,10 @@ import { CommunityBoard } from './community/CommunityBoard'
 import { estimateP50Draw, opportunityScore, type DrawTimeEstimate } from './drawMetrics'
 import siteConfig from '../site.config.json'
 import {
+  buildWeaponFilterOptions,
+  matchesWeaponFilter,
+} from './huntFilters'
+import {
   defaultLandAccessForHunt,
   landAccessOptions,
   matchesLandAccess,
@@ -394,15 +398,7 @@ function PlannerApp() {
         )
       )
     })
-    const options = new Map<string, string>()
-    scoped.forEach((hunt) => {
-      const value = weaponFilterValue(hunt, plannerState, species)
-      if (value) options.set(value, weaponFilterLabel(value))
-    })
-    return [
-      { value: 'all', label: 'All weapons' },
-      ...[...options].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)),
-    ]
+    return buildWeaponFilterOptions(scoped)
   }, [activeData, category, landAccess, plannerState, species])
 
   const visibleCategoryOptions = useMemo(() => {
@@ -421,7 +417,7 @@ function PlannerApp() {
         !usesLandAccessFilter(plannerState, species, category)
         || matchesLandAccess(hunt, landAccess)
       ))
-      .filter((hunt) => weapon === 'all' || weaponFilterValue(hunt, plannerState, species) === weapon)
+      .filter((hunt) => matchesWeaponFilter(hunt, weapon))
       .filter((hunt) => {
         if (!needle) return true
         return [
@@ -772,7 +768,7 @@ function PlannerApp() {
           </div>
 
           <label className="field">
-            <span>Weapon</span>
+            <span>Weapon & season</span>
             <select value={weapon} onChange={(event) => setWeapon(event.target.value)}>
               {weaponOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -789,6 +785,7 @@ function PlannerApp() {
                 value={landAccess}
                 onChange={(event) => {
                   setLandAccess(event.target.value as LandAccess)
+                  setWeapon('all')
                   setSelectedId(null)
                 }}
               >
@@ -2146,22 +2143,22 @@ function getInitialShareState() {
   if (typeof window === 'undefined') return fallback
 
   const params = new URLSearchParams(window.location.search)
-  const stateParam = params.get('state')
-  const state: PlannerState =
-    stateParam === 'wy' || stateParam === 'wyoming'
-      ? 'wyoming'
-      : stateParam === 'id' || stateParam === 'idaho'
-        ? 'idaho'
-        : stateParam === 'co' || stateParam === 'colorado'
-      ? 'colorado'
-      : stateParam === 'ut' || stateParam === 'utah'
-        ? 'utah'
-        : fallback.state
+  const state = normalizePlannerState(params.get('state')) ?? fallback.state
   const huntNumber =
     params.get('hunt') ?? params.get('huntNumber') ?? params.get('HN') ?? ''
   const normalizedHuntNumber = huntNumber.trim().toLowerCase()
+  const normalizedHuntId = params.get('huntId')?.trim().toLowerCase() ?? ''
   const hunt =
-    allHunts.find(
+    (
+      normalizedHuntId
+        ? allHunts.find(
+          (candidate) =>
+            (normalizePlannerState(candidate.state) ?? 'utah') === state
+            && candidate.id.toLowerCase() === normalizedHuntId,
+        )
+        : null
+    )
+    ?? allHunts.find(
       (candidate) =>
         (normalizePlannerState(candidate.state) ?? 'utah') === state &&
         (
@@ -2208,16 +2205,20 @@ function getInitialShareState() {
     : defaultCategory
 
   const weaponParam = params.get('weapon')
-  const weaponMatchesState = weaponParam === 'all'
+  const weaponMatchesState = weaponParam !== null && (
+    weaponParam === 'all'
     || stateHunts.some(
       (candidate) =>
         candidate.species === species
         && (category === 'all' || candidate.category === category)
-        && weaponFilterValue(candidate, resolvedState, species) === weaponParam,
+        && matchesWeaponFilter(candidate, weaponParam),
     )
-  const weaponMatchesHunt = !hunt
+  )
+  const weaponMatchesHunt = weaponParam !== null && (
+    !hunt
     || weaponParam === 'all'
-    || weaponFilterValue(hunt, resolvedState, species) === weaponParam
+    || matchesWeaponFilter(hunt, weaponParam)
+  )
   const defaultWeapon = !hunt
     && resolvedState === fallback.state
     && species === fallback.species
@@ -2226,7 +2227,7 @@ function getInitialShareState() {
       (candidate) =>
         candidate.species === species
         && candidate.category === category
-        && weaponFilterValue(candidate, resolvedState, species) === fallback.weapon,
+        && matchesWeaponFilter(candidate, fallback.weapon),
     )
     ? fallback.weapon
     : 'all'
@@ -2267,13 +2268,14 @@ function getInitialShareState() {
 }
 
 function normalizePlannerState(value: unknown): PlannerState | null {
-  return value === 'wy' || value === 'wyoming'
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : value
+  return normalized === 'wy' || normalized === 'wyoming'
     ? 'wyoming'
-    : value === 'id' || value === 'idaho'
+    : normalized === 'id' || normalized === 'idaho'
       ? 'idaho'
-      : value === 'co' || value === 'colorado'
+      : normalized === 'co' || normalized === 'colorado'
     ? 'colorado'
-    : value === 'ut' || value === 'utah'
+    : normalized === 'ut' || normalized === 'utah'
       ? 'utah'
       : null
 }
@@ -2288,6 +2290,7 @@ function selectedHuntUrl(
   const url = appUrl('/')
   url.searchParams.set('state', stateCode(normalizePlannerState(hunt.state) ?? 'utah'))
   url.searchParams.set('hunt', hunt.huntNumber)
+  url.searchParams.set('huntId', hunt.id)
   url.searchParams.set('residency', residency)
   if (open3D) url.searchParams.set('view', '3d')
   if (open3D && pin) url.searchParams.set('pin', formatMapPin(pin))
@@ -2312,6 +2315,7 @@ function contactPageUrl(hunt?: Hunt | null, residency?: Residency) {
   if (hunt && residency) {
     url.searchParams.set('state', stateCode(normalizePlannerState(hunt.state) ?? 'utah'))
     url.searchParams.set('hunt', hunt.huntNumber)
+    url.searchParams.set('huntId', hunt.id)
     url.searchParams.set('residency', residency)
   }
   return url.toString()
@@ -2323,6 +2327,7 @@ function communityPageUrl(hunt?: Hunt | null, compose = false) {
     url.searchParams.set('state', stateCode(normalizePlannerState(hunt.state) ?? 'utah').toUpperCase())
     url.searchParams.set('species', hunt.species)
     url.searchParams.set('hunt', hunt.huntNumber)
+    url.searchParams.set('huntId', hunt.id)
   }
   if (compose) url.searchParams.set('compose', '1')
   return url.toString()
@@ -2508,48 +2513,6 @@ function p50DrawText(estimate: DrawTimeEstimate) {
 
 function formatOpportunityScore(value: number) {
   return `${value.toFixed(1)} / 100`
-}
-
-function weaponFilterValue(
-  hunt: Hunt,
-  plannerState: PlannerState,
-  species: string,
-) {
-  const splitUtahElkSeason = (
-    plannerState === 'utah'
-    && species === 'Elk'
-    && hunt.category === 'limited-entry'
-    && (hunt.weapon === 'Any Legal Weapon' || hunt.weapon === 'Archery')
-  )
-  if (!splitUtahElkSeason) return hunt.weapon
-
-  const month = seasonStartMonth(hunt.seasonDateText)
-  return `${hunt.weapon}::${month ?? 'Season date not listed'}`
-}
-
-function weaponFilterLabel(value: string) {
-  const [weaponName, month] = value.split('::')
-  return month ? `${weaponName} - ${month}` : value
-}
-
-function seasonStartMonth(value: string | null) {
-  const match = value?.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\b/i)
-  if (!match) return null
-  return ({
-    jan: 'January',
-    feb: 'February',
-    mar: 'March',
-    apr: 'April',
-    may: 'May',
-    jun: 'June',
-    jul: 'July',
-    aug: 'August',
-    sep: 'September',
-    sept: 'September',
-    oct: 'October',
-    nov: 'November',
-    dec: 'December',
-  } as Record<string, string>)[match[1].toLowerCase()] ?? null
 }
 
 function shortSeason(value: string | null) {

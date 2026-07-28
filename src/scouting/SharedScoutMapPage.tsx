@@ -215,6 +215,9 @@ export function SharedScoutMapPage({ shareId }: { shareId: string }) {
   const plannerUrl = new URL('/', window.location.origin)
   plannerUrl.searchParams.set('state', share.workspace.state)
   plannerUrl.searchParams.set('hunt', share.workspace.huntNumber)
+  if (share.workspace.huntId) {
+    plannerUrl.searchParams.set('huntId', share.workspace.huntId)
+  }
   plannerUrl.searchParams.set('view', '3d')
   plannerUrl.hash = 'planner'
 

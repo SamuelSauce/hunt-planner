@@ -49,6 +49,7 @@ export const communitySchema = {
       state: 'state',
       species: 'species',
       huntNumber: 'hunt_number',
+      huntId: 'hunt_id',
       createdAt: 'created_at',
       updatedAt: 'updated_at',
       lastActivityAt: 'last_activity_at',
