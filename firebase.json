@@ -151,8 +151,7 @@
           "source": "/api/{community,maps}{,/**}",
           "function": {
             "functionId": "communityApiProxy",
-            "region": "us-central1",
-            "pinTag": true
+            "region": "us-central1"
           }
         },
         {
