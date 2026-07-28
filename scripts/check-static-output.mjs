@@ -211,6 +211,13 @@ if (!productionHosting) fail('firebase.json is missing the production Hosting ta
 if ((productionHosting.rewrites || []).some((rewrite) => rewrite.source === '**')) {
   fail('firebase.json still contains a soft-404 catch-all rewrite')
 }
+const legacyHosting = hostingEntries.find((entry) => entry.target === 'legacy')
+if (!legacyHosting || legacyHosting.public !== productionHosting.public) {
+  fail('The legacy Hosting target must preserve access to the canonical build')
+}
+if ((legacyHosting.redirects || []).length > 0) {
+  fail('The legacy Hosting target must not strand origin-scoped guest scouting data')
+}
 
 const feed = fs.readFileSync(path.join(DIST, 'feed.xml'), 'utf8')
 if (!feed.includes('<item>')) fail('RSS feed has no articles')

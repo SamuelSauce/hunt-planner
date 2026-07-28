@@ -93,22 +93,79 @@
     },
     {
       "target": "legacy",
-      "public": "dist/legacy",
+      "public": "dist/client",
       "ignore": [
         "firebase.json",
         "**/.*",
         "**/node_modules/**"
       ],
-      "redirects": [
+      "headers": [
         {
-          "source": "/",
-          "destination": "https://huntplanner.web.app/",
-          "type": 301
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=0,must-revalidate"
+            }
+          ]
         },
         {
-          "source": "/:path*",
-          "destination": "https://huntplanner.web.app/:path",
-          "type": 301
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=31536000,immutable"
+            }
+          ]
+        },
+        {
+          "source": "/data/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=3600,s-maxage=86400"
+            }
+          ]
+        },
+        {
+          "source": "/{sitemap.xml,feed.xml,robots.txt}",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=300,s-maxage=3600"
+            }
+          ]
+        },
+        {
+          "source": "/scout-map/**",
+          "headers": [
+            {
+              "key": "X-Robots-Tag",
+              "value": "noindex, nofollow, noarchive"
+            }
+          ]
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "/api/{community,maps}{,/**}",
+          "function": {
+            "functionId": "communityApiProxy",
+            "region": "us-central1",
+            "pinTag": true
+          }
+        },
+        {
+          "source": "/community{,/**}",
+          "destination": "/community/index.html"
+        },
+        {
+          "source": "/contact{,/**}",
+          "destination": "/contact/index.html"
+        },
+        {
+          "source": "/scout-map/**",
+          "destination": "/index.html"
         }
       ]
     }

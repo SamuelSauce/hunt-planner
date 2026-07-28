@@ -112,8 +112,9 @@ firebase deploy --only hosting
 ```
 
 The Firebase configuration publishes the canonical site at
-`huntplanner.web.app` and keeps the former generated hostname as a permanent
-path-preserving redirect.
+`huntplanner.web.app`. The former generated hostname serves the same build with
+canonical links to the new address so origin-scoped guest scouting data remains
+available during the migration.
 
 ## Data notes
 

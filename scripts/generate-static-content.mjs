@@ -551,6 +551,14 @@ function spaShellPage(spaShell, { pathname, title, description }) {
       `<meta property="og:url" content="${escapeHtml(pageUrl)}">`,
     )
     .replace(
+      /<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="twitter:title" content="${escapeHtml(title)}">`,
+    )
+    .replace(
+      /<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="twitter:description" content="${escapeHtml(description)}">`,
+    )
+    .replace(
       /<script type="application\/ld\+json">[\s\S]*?<\/script>/i,
       structuredData,
     )

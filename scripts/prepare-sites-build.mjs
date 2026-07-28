@@ -22,10 +22,6 @@ if (!fs.existsSync(WORKER)) {
 
 fs.mkdirSync(SERVER, { recursive: true })
 fs.copyFileSync(WORKER, path.join(SERVER, 'index.js'))
-fs.mkdirSync(LEGACY, { recursive: true })
-fs.writeFileSync(
-  path.join(LEGACY, 'index.html'),
-  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Hunt Planner has moved</title></head><body><p>Hunt Planner has moved to <a href="https://huntplanner.web.app/">huntplanner.web.app</a>.</p></body></html>',
-)
+fs.rmSync(LEGACY, { recursive: true, force: true })
 
 console.log('Prepared the validated Sites build with the Community API worker.')
