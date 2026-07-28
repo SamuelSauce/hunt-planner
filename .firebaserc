@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "huntplanner-66d5e"
+  },
+  "targets": {
+    "huntplanner-66d5e": {
+      "hosting": {
+        "production": [
+          "huntplanner"
+        ],
+        "legacy": [
+          "huntplanner-66d5e"
+        ]
+      }
+    }
   }
 }

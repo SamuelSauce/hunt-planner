@@ -6,9 +6,12 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist', 'client')
 const CONTENT_DIR = path.join(ROOT, 'content', 'journal')
-const SITE_URL = (process.env.SITE_URL || 'https://huntplanner-66d5e.web.app').replace(/\/+$/, '')
+const SITE_CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, 'site.config.json'), 'utf8'))
+const SITE_URL = (process.env.SITE_URL || SITE_CONFIG.canonicalOrigin).replace(/\/+$/, '')
+const SITE_NAME = SITE_CONFIG.siteName || 'Hunt Planner'
+const DEFAULT_SOCIAL_IMAGE = SITE_CONFIG.defaultSocialImage || '/og.png'
 const GOOGLE_SITE_VERIFICATION =
-  process.env.GOOGLE_SITE_VERIFICATION?.trim() || '8DsEg0bgSFxcrQAgYz-ThiMPYc-b1NsLjsMKcxMUZNs'
+  process.env.GOOGLE_SITE_VERIFICATION?.trim() || SITE_CONFIG.googleSiteVerification || ''
 const ANALYTICS_ID = 'G-NC83FX30D5'
 const ANALYTICS_DISABLED_STORAGE_KEY = 'hunt-planner:analytics-disabled'
 const VALIDATE_ONLY = process.argv.includes('--validate-only')
@@ -61,6 +64,27 @@ const formatNumber = (value) => (Number.isFinite(value) ? new Intl.NumberFormat(
 const formatPercent = (value) => (Number.isFinite(value) ? `${Number(value).toFixed(1).replace('.0', '')}%` : '—')
 const formatDate = (value) =>
   new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date(value))
+const formatLastModified = (value) => {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.valueOf()) ? null : parsed.toISOString()
+}
+const latestLastModified = (values) =>
+  values
+    .map(formatLastModified)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || null
+
+function truncateSnippet(value, maxLength) {
+  const normalized = String(value).replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxLength) return normalized
+  const clipped = normalized.slice(0, maxLength - 1)
+  const boundary = clipped.lastIndexOf(' ')
+  const safe =
+    boundary >= Math.floor(maxLength * 0.72) ? clipped.slice(0, boundary) : clipped
+  return `${safe.replace(/[\s,;:.-]+$/g, '')}…`
+}
 
 function parseFrontmatter(source, file) {
   const normalized = source.replaceAll('\r\n', '\n')
@@ -293,17 +317,23 @@ function metadata({
   title,
   description,
   pathname,
-  image = '/og.png',
+  image = DEFAULT_SOCIAL_IMAGE,
   type = 'website',
   published,
   modified,
   author,
+  robots = 'index,follow,max-image-preview:large',
+  canonical = true,
 }) {
   const url = absoluteUrl(pathname)
   const imageUrl = absoluteUrl(image)
-  const [imageWidth, imageHeight] = image === '/og.png' ? [1731, 909] : [1200, 675]
+  const [imageWidth, imageHeight] =
+    image === DEFAULT_SOCIAL_IMAGE ? [1734, 907] : [1200, 675]
   const verification = GOOGLE_SITE_VERIFICATION
     ? `<meta name="google-site-verification" content="${escapeHtml(GOOGLE_SITE_VERIFICATION)}">`
+    : ''
+  const canonicalTag = canonical
+    ? `<link rel="canonical" href="${escapeHtml(url)}">`
     : ''
   const articleMeta =
     type === 'article'
@@ -317,20 +347,21 @@ function metadata({
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>${escapeHtml(title)}</title>
     <meta name="description" content="${escapeHtml(description)}">
-    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta name="robots" content="${escapeHtml(robots)}">
     ${verification}
-    <link rel="canonical" href="${escapeHtml(url)}">
+    ${canonicalTag}
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/editorial.css">
-    <link rel="alternate" type="application/rss+xml" title="Hunt Planner Journal" href="${absoluteUrl('/feed.xml')}">
+    <link rel="alternate" type="application/rss+xml" title="${escapeHtml(SITE_NAME)} Journal" href="${absoluteUrl('/feed.xml')}">
     <meta property="og:type" content="${type}">
-    <meta property="og:site_name" content="Hunt Planner">
+    <meta property="og:site_name" content="${escapeHtml(SITE_NAME)}">
     <meta property="og:title" content="${escapeHtml(title)}">
     <meta property="og:description" content="${escapeHtml(description)}">
     <meta property="og:url" content="${escapeHtml(url)}">
     <meta property="og:image" content="${escapeHtml(imageUrl)}">
     <meta property="og:image:width" content="${imageWidth}">
     <meta property="og:image:height" content="${imageHeight}">
+    <meta property="og:image:alt" content="Hunt Planner — western big-game research">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${escapeHtml(title)}">
     <meta name="twitter:description" content="${escapeHtml(description)}">
@@ -472,6 +503,90 @@ function writePage(pathname, html) {
   const directory = path.join(DIST, relative)
   fs.mkdirSync(directory, { recursive: true })
   fs.writeFileSync(path.join(directory, 'index.html'), html)
+}
+
+function spaShellPage(spaShell, { pathname, title, description }) {
+  const pageUrl = absoluteUrl(pathname)
+  const startMarker = '<!-- SEO_ENTRY_START -->'
+  const endMarker = '<!-- SEO_ENTRY_END -->'
+  const start = spaShell.indexOf(startMarker)
+  const end = spaShell.indexOf(endMarker)
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('The built home page is missing its static SEO entry markers')
+  }
+
+  const structuredData = jsonLd({
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name: title,
+    description,
+    url: pageUrl,
+    isPartOf: { '@id': absoluteUrl('/#website') },
+  })
+
+  return `${spaShell.slice(0, start)}${spaShell.slice(end + endMarker.length)}`
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title)}</title>`)
+    .replace(
+      /<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="description" content="${escapeHtml(description)}">`,
+    )
+    .replace(
+      /<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/i,
+      '<meta name="robots" content="noindex,follow">',
+    )
+    .replace(
+      /<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i,
+      `<link rel="canonical" href="${escapeHtml(pageUrl)}">`,
+    )
+    .replace(
+      /<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:title" content="${escapeHtml(title)}">`,
+    )
+    .replace(
+      /<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:description" content="${escapeHtml(description)}">`,
+    )
+    .replace(
+      /<meta\s+property="og:url"\s+content="[^"]*"\s*\/?>/i,
+      `<meta property="og:url" content="${escapeHtml(pageUrl)}">`,
+    )
+    .replace(
+      /<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="twitter:title" content="${escapeHtml(title)}">`,
+    )
+    .replace(
+      /<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/?>/i,
+      `<meta name="twitter:description" content="${escapeHtml(description)}">`,
+    )
+    .replace(
+      /<script type="application\/ld\+json">[\s\S]*?<\/script>/i,
+      structuredData,
+    )
+}
+
+function notFoundPage() {
+  const title = 'Page not found | Hunt Planner'
+  const description = 'That Hunt Planner page does not exist. Browse the hunt library or return to the interactive planner.'
+  return documentHtml({
+    head: metadata({
+      title,
+      description,
+      pathname: '/404.html',
+      robots: 'noindex,follow',
+      canonical: false,
+    }),
+    body: `
+      <main class="page-shell prose-page">
+        <p class="eyebrow">404</p>
+        <h1 class="page-title">That trail ends here.</h1>
+        <p class="dek">${escapeHtml(description)}</p>
+        <div class="button-row">
+          <a class="button" href="/">Open planner</a>
+          <a class="button secondary" href="/hunts/">Browse hunt profiles</a>
+          <a class="button secondary" href="/journal/">Read the journal</a>
+        </div>
+      </main>`,
+  })
 }
 
 function primaryHunt(group) {
@@ -1045,8 +1160,14 @@ function articlePage(article) {
 function huntPage(group, related, matchingArticles) {
   const pathname = huntPath(group)
   const stats = huntStats(group)
-  const title = `${group.state.label} ${group.species} Hunt ${group.huntNumber}: ${group.huntName} | Hunt Planner`
-  const description = `Official-source planning data for ${group.state.label} ${group.species} hunt ${group.huntNumber}, ${group.huntName}: seasons, permits, draw and harvest details, sources and 3D map links.`
+  const title = truncateSnippet(
+    `${group.state.label} ${group.species} hunt ${group.huntNumber}: ${group.huntName}`,
+    68,
+  )
+  const description = truncateSnippet(
+    `Draw odds, permits, seasons, harvest results and a 3D map for ${group.state.label} ${group.species} hunt ${group.huntNumber}, ${group.huntName}.`,
+    158,
+  )
   const speciesPath = `/hunts/${group.state.key}/${slugify(group.species)}/`
   const items = [
     { name: 'Home', path: '/' },
@@ -1103,7 +1224,7 @@ function huntPage(group, related, matchingArticles) {
       <main class="page-shell">
         ${breadcrumbs(items)}
         <p class="eyebrow">${escapeHtml(group.state.label)} · ${escapeHtml(group.species)} · Hunt ${escapeHtml(group.huntNumber)}</p>
-        <h1 class="page-title">${escapeHtml(group.huntName)}</h1>
+        <h1 class="page-title">${escapeHtml(`${group.state.label} ${group.species} hunt ${group.huntNumber}: ${group.huntName}`)}</h1>
         <p class="dek">${escapeHtml(description)}</p>
         ${statCards(group)}
         ${drawOutlook(group)}
@@ -1381,10 +1502,21 @@ function rss(articles) {
 </rss>`
 }
 
-function sitemap(pathnames) {
-  const urls = unique(pathnames)
-    .sort()
-    .map((pathname) => `  <url><loc>${escapeXml(absoluteUrl(pathname))}</loc></url>`)
+function sitemap(entries) {
+  const byPathname = new Map()
+  for (const entry of entries) {
+    const existing = byPathname.get(entry.pathname)
+    const lastmod = formatLastModified(entry.lastmod)
+    if (!existing || (lastmod && (!existing.lastmod || lastmod > existing.lastmod))) {
+      byPathname.set(entry.pathname, { pathname: entry.pathname, lastmod })
+    }
+  }
+  const urls = [...byPathname.values()]
+    .sort((a, b) => a.pathname.localeCompare(b.pathname))
+    .map(
+      ({ pathname, lastmod }) =>
+        `  <url><loc>${escapeXml(absoluteUrl(pathname))}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}</url>`,
+    )
     .join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -1397,6 +1529,10 @@ function patchHomeVerification() {
   const file = path.join(DIST, 'index.html')
   let html = fs.readFileSync(file, 'utf8')
   const tag = `<meta name="google-site-verification" content="${escapeHtml(GOOGLE_SITE_VERIFICATION)}">`
+  html = html.replace(
+    /\s*<meta\s+name="google-site-verification"\s+content="[^"]*"\s*\/?>/gi,
+    '',
+  )
   html = html.replace('</head>', `    ${tag}\n  </head>`)
   fs.writeFileSync(file, html)
 }
@@ -1411,27 +1547,55 @@ function main() {
   if (!fs.existsSync(DIST)) throw new Error('dist/ does not exist; run the Vite build first')
 
   const spaShell = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8')
-  writePage('/community/', spaShell)
+  writePage(
+    '/community/',
+    spaShellPage(spaShell, {
+      pathname: '/community/',
+      title: 'Hunt Planner Community',
+      description: 'Community discussion for western big-game research, draw strategy, scouting and hunt reports.',
+    }),
+  )
+  writePage(
+    '/contact/',
+    spaShellPage(spaShell, {
+      pathname: '/contact/',
+      title: 'Contact Hunt Planner',
+      description: 'Ask a Hunt Planner question, share feedback or report an issue with hunt data.',
+    }),
+  )
+  fs.writeFileSync(path.join(DIST, '404.html'), notFoundPage())
 
-  const paths = ['/', '/hunts/', '/journal/', '/community/']
+  const stateModified = new Map(
+    stateConfigs.map((state) => [
+      state.key,
+      readJson(path.join(ROOT, 'src', 'data', state.file)).generatedAt,
+    ]),
+  )
+  const dataModified = latestLastModified([...stateModified.values()])
+  const journalModified = latestLastModified(articles.map((article) => article.data.dateModified))
+  const entries = [
+    { pathname: '/', lastmod: latestLastModified([dataModified, journalModified]) },
+    { pathname: '/hunts/', lastmod: dataModified },
+    { pathname: '/journal/', lastmod: journalModified },
+  ]
   writePage('/journal/', journalIndex(articles))
   writePage('/hunts/', huntLibraryIndex(groups))
 
   for (const article of articles) {
     const pathname = articlePath(article)
     writePage(pathname, articlePage(article))
-    paths.push(pathname)
+    entries.push({ pathname, lastmod: article.data.dateModified })
   }
 
   for (const state of stateConfigs) {
     const statePath = `/hunts/${state.key}/`
     writePage(statePath, stateIndex(state, groups))
-    paths.push(statePath)
+    entries.push({ pathname: statePath, lastmod: stateModified.get(state.key) })
     const species = unique(groups.filter((group) => group.state.key === state.key).map((group) => group.species)).sort()
     for (const name of species) {
       const pathname = `/hunts/${state.key}/${slugify(name)}/`
       writePage(pathname, speciesIndex(state, name, groups))
-      paths.push(pathname)
+      entries.push({ pathname, lastmod: stateModified.get(state.key) })
     }
   }
 
@@ -1447,16 +1611,16 @@ function main() {
       .slice(0, 3)
     const pathname = huntPath(group)
     writePage(pathname, huntPage(group, related, matchingArticles))
-    paths.push(pathname)
+    entries.push({ pathname, lastmod: stateModified.get(group.state.key) })
   }
 
   for (const page of staticProsePages()) {
     writePage(page.pathname, prosePage(page))
-    paths.push(page.pathname)
+    entries.push({ pathname: page.pathname })
   }
 
   fs.writeFileSync(path.join(DIST, 'feed.xml'), rss(articles))
-  fs.writeFileSync(path.join(DIST, 'sitemap.xml'), sitemap(paths))
+  fs.writeFileSync(path.join(DIST, 'sitemap.xml'), sitemap(entries))
   fs.writeFileSync(
     path.join(DIST, 'robots.txt'),
     `User-agent: *\nAllow: /\n\nSitemap: ${absoluteUrl('/sitemap.xml')}\n`,
