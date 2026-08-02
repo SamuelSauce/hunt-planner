@@ -86,6 +86,10 @@
           "destination": "/contact/index.html"
         },
         {
+          "source": "/{map,account,profile}{,/**}",
+          "destination": "/index.html"
+        },
+        {
           "source": "/scout-map/**",
           "destination": "/index.html"
         }
@@ -161,6 +165,10 @@
         {
           "source": "/contact{,/**}",
           "destination": "/contact/index.html"
+        },
+        {
+          "source": "/{map,account,profile}{,/**}",
+          "destination": "/index.html"
         },
         {
           "source": "/scout-map/**",
