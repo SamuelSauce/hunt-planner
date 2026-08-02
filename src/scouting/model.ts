@@ -20,6 +20,7 @@ export type ScoutLayerKind = 'hunt-default' | 'custom'
 export type ScoutHuntContext = {
   state: string
   huntNumber: string
+  huntId?: string
   huntName: string
   species: string
   gender: string
@@ -62,6 +63,7 @@ export type ScoutWorkspace = {
   version: 1
   state: string
   huntNumber: string
+  huntId?: string
   name: string
   layers: ScoutLayer[]
   pins: ScoutPin[]
@@ -257,10 +259,13 @@ export function scoutWeaponAbbreviation(weapon: string) {
 }
 
 export function sameScoutHunt(a: ScoutHuntContext, b: ScoutHuntContext) {
-  return (
+  const sameNumber = (
     a.state.toLowerCase() === b.state.toLowerCase() &&
     a.huntNumber.toUpperCase() === b.huntNumber.toUpperCase()
   )
+  if (!sameNumber) return false
+  if (!a.huntId || !b.huntId) return true
+  return a.huntId.toLowerCase() === b.huntId.toLowerCase()
 }
 
 /**
@@ -273,10 +278,17 @@ export function scoutLibraryForHunt(
   hunt: ScoutHuntContext,
   now = Date.now(),
 ): ScoutLibrary {
-  const layers = library.layers.map((layer) => ({
-    ...layer,
-    visible: sameScoutHunt(layer.hunt, hunt),
-  }))
+  const layers = library.layers.map((layer) => {
+    const matches = sameScoutHunt(layer.hunt, hunt)
+    const claimsLegacyLayer = matches && hunt.huntId && !layer.hunt.huntId
+    return {
+      ...layer,
+      hunt: claimsLegacyLayer
+        ? normalizeScoutHunt({ ...layer.hunt, huntId: hunt.huntId })
+        : layer.hunt,
+      visible: matches,
+    }
+  })
   if (!layers.some((layer) => layer.kind === 'hunt-default' && sameScoutHunt(layer.hunt, hunt))) {
     layers.push(createHuntDefaultLayer(hunt, layers.length, now))
   }
@@ -329,6 +341,7 @@ export function scoutWorkspaceFromLibrary(
     version: 1,
     state: hunt.state,
     huntNumber: hunt.huntNumber,
+    ...(hunt.huntId ? { huntId: hunt.huntId } : {}),
     name: hunt.huntName,
     layers: library.layers,
     pins: library.pins,
@@ -349,6 +362,7 @@ export function scoutLibraryFromWorkspaces(
     const fallbackHunt: ScoutHuntContext = {
       state: workspace.state,
       huntNumber: workspace.huntNumber,
+      ...(workspace.huntId ? { huntId: workspace.huntId } : {}),
       huntName: workspace.name,
       species: workspace.pins[0]?.species ?? '',
       gender: '',
@@ -505,6 +519,7 @@ function normalizeScoutHunt(hunt: ScoutHuntContext): ScoutHuntContext {
   return {
     state: hunt.state.toLowerCase(),
     huntNumber: hunt.huntNumber.toUpperCase(),
+    ...(hunt.huntId ? { huntId: hunt.huntId.trim() } : {}),
     huntName: hunt.huntName.trim(),
     species: hunt.species.trim(),
     gender: hunt.gender.trim(),

@@ -12,58 +12,163 @@
       ]
     }
   ],
-  "hosting": {
-    "site": "huntplanner-66d5e",
-    "public": "dist/client",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "headers": [
-      {
-        "source": "**",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
-          }
-        ]
-      },
-      {
-        "source": "/assets/**",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "public,max-age=31536000,immutable"
-          }
-        ]
-      },
-      {
-        "source": "/scout-map/**",
-        "headers": [
-          {
-            "key": "X-Robots-Tag",
-            "value": "noindex, nofollow, noarchive"
-          }
-        ]
-      }
-    ],
-    "rewrites": [
-      {
-        "source": "/api/{community,maps}{,/**}",
-        "function": {
-          "functionId": "communityApiProxy",
-          "region": "us-central1",
-          "pinTag": true
+  "hosting": [
+    {
+      "target": "production",
+      "public": "dist/client",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=0,must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=31536000,immutable"
+            }
+          ]
+        },
+        {
+          "source": "/data/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=3600,s-maxage=86400"
+            }
+          ]
+        },
+        {
+          "source": "/{sitemap.xml,feed.xml,robots.txt}",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=300,s-maxage=3600"
+            }
+          ]
+        },
+        {
+          "source": "/scout-map/**",
+          "headers": [
+            {
+              "key": "X-Robots-Tag",
+              "value": "noindex, nofollow, noarchive"
+            }
+          ]
         }
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
-  },
+      ],
+      "rewrites": [
+        {
+          "source": "/api/{community,maps}{,/**}",
+          "function": {
+            "functionId": "communityApiProxy",
+            "region": "us-central1",
+            "pinTag": true
+          }
+        },
+        {
+          "source": "/community{,/**}",
+          "destination": "/community/index.html"
+        },
+        {
+          "source": "/contact{,/**}",
+          "destination": "/contact/index.html"
+        },
+        {
+          "source": "/scout-map/**",
+          "destination": "/index.html"
+        }
+      ]
+    },
+    {
+      "target": "legacy",
+      "public": "dist/client",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=0,must-revalidate"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=31536000,immutable"
+            }
+          ]
+        },
+        {
+          "source": "/data/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=3600,s-maxage=86400"
+            }
+          ]
+        },
+        {
+          "source": "/{sitemap.xml,feed.xml,robots.txt}",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public,max-age=300,s-maxage=3600"
+            }
+          ]
+        },
+        {
+          "source": "/scout-map/**",
+          "headers": [
+            {
+              "key": "X-Robots-Tag",
+              "value": "noindex, nofollow, noarchive"
+            }
+          ]
+        }
+      ],
+      "rewrites": [
+        {
+          "source": "/api/{community,maps}{,/**}",
+          "function": {
+            "functionId": "communityApiProxy",
+            "region": "us-central1"
+          }
+        },
+        {
+          "source": "/community{,/**}",
+          "destination": "/community/index.html"
+        },
+        {
+          "source": "/contact{,/**}",
+          "destination": "/contact/index.html"
+        },
+        {
+          "source": "/scout-map/**",
+          "destination": "/index.html"
+        }
+      ]
+    }
+  ],
   "auth": {
     "providers": {
       "googleSignIn": {

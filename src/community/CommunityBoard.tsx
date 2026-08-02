@@ -1243,7 +1243,11 @@ function ComposerModal({
               <span>State</span>
               <select
                 value={draft.state}
-                onChange={(event) => onChange({ ...draft, state: event.target.value })}
+                onChange={(event) => onChange({
+                  ...draft,
+                  state: event.target.value,
+                  huntId: undefined,
+                })}
               >
                 <option value="">Any / not specific</option>
                 {stateOptions.slice(1).map((option) => (
@@ -1288,7 +1292,11 @@ function ComposerModal({
               <span>Species <i>Optional</i></span>
               <input
                 value={draft.species}
-                onChange={(event) => onChange({ ...draft, species: event.target.value })}
+                onChange={(event) => onChange({
+                  ...draft,
+                  species: event.target.value,
+                  huntId: undefined,
+                })}
                 placeholder="Elk, deer, pronghorn…"
                 maxLength={60}
               />
@@ -1297,7 +1305,11 @@ function ComposerModal({
               <span>Related hunt number <i>Optional</i></span>
               <input
                 value={draft.huntNumber}
-                onChange={(event) => onChange({ ...draft, huntNumber: event.target.value.toUpperCase() })}
+                onChange={(event) => onChange({
+                  ...draft,
+                  huntNumber: event.target.value.toUpperCase(),
+                  huntId: undefined,
+                })}
                 placeholder="DB1001"
                 maxLength={40}
               />
@@ -1542,6 +1554,7 @@ function threadIdFromLocation() {
 function draftFromStorageOrLocation(): CommunityDraft {
   if (typeof window === 'undefined') return initialDraft
   const params = new URLSearchParams(window.location.search)
+  const locationHuntNumber = params.get('hunt')
   const stored = (() => {
     try {
       return JSON.parse(
@@ -1556,7 +1569,10 @@ function draftFromStorageOrLocation(): CommunityDraft {
     ...stored,
     state: params.get('state') ?? stored.state ?? '',
     species: params.get('species') ?? stored.species ?? '',
-    huntNumber: params.get('hunt') ?? stored.huntNumber ?? '',
+    huntNumber: locationHuntNumber ?? stored.huntNumber ?? '',
+    huntId: locationHuntNumber !== null
+      ? params.get('huntId') ?? undefined
+      : stored.huntId ?? undefined,
   }
 }
 
@@ -1564,6 +1580,7 @@ function plannerHuntHref(post: CommunityPost) {
   const params = new URLSearchParams()
   if (post.state) params.set('state', post.state.toLowerCase())
   if (post.huntNumber) params.set('hunt', post.huntNumber)
+  if (post.huntId) params.set('huntId', post.huntId)
   if (post.species) params.set('species', post.species)
   return `/?${params}#planner`
 }

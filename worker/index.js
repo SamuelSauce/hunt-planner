@@ -5,6 +5,8 @@ const FIREBASE_IDENTITY_LOOKUP_URL =
   "https://identitytoolkit.googleapis.com/v1/accounts:lookup";
 const FIREBASE_WEB_API_KEY = "AIzaSyBpuyQXJ6HIthnLBIyT7tDLqiIaVS070gw";
 const COMMUNITY_ALLOWED_ORIGINS = new Set([
+  "https://huntplanner.web.app",
+  "https://huntplanner.firebaseapp.com",
   "https://huntplanner-66d5e.web.app",
   "https://huntplanner-66d5e.firebaseapp.com",
   "https://hunt-planner-seo-preview.samuelfbridge.chatgpt.site",
@@ -76,6 +78,7 @@ const COMMUNITY_SCHEMA_STATEMENTS = [
     state TEXT,
     species TEXT,
     hunt_number TEXT,
+    hunt_id TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     last_activity_at INTEGER NOT NULL,
@@ -519,6 +522,17 @@ function handleCommunityPreflight(request) {
 async function initializeCommunitySchema(db) {
   const statements = COMMUNITY_SCHEMA_STATEMENTS.map((sql) => db.prepare(sql));
   await db.batch(statements);
+  const postColumns = await db.prepare("PRAGMA table_info(community_posts)").all();
+  if (!(postColumns.results ?? []).some((column) => column.name === "hunt_id")) {
+    try {
+      await db.prepare("ALTER TABLE community_posts ADD COLUMN hunt_id TEXT").run();
+    } catch (error) {
+      const refreshed = await db.prepare("PRAGMA table_info(community_posts)").all();
+      if (!(refreshed.results ?? []).some((column) => column.name === "hunt_id")) {
+        throw error;
+      }
+    }
+  }
 }
 
 function ensureCommunitySchema(db) {
@@ -570,7 +584,7 @@ function normalizePlainText(value, field, options) {
   return normalized;
 }
 
-function validatePostDraft(payload) {
+export function validatePostDraft(payload) {
   const title = normalizePlainText(payload.title, "Title", {
     min: 10,
     max: 140,
@@ -618,6 +632,16 @@ function validatePostDraft(payload) {
       "Hunt number may contain letters, numbers, spaces, periods, underscores, slashes, and hyphens.",
     );
   }
+  const huntId = normalizePlainText(payload.huntId, "Hunt ID", {
+    max: 80,
+    optional: true,
+  });
+  if (
+    huntId &&
+    !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(huntId)
+  ) {
+    throw new HttpError(400, "Hunt ID is invalid.");
+  }
 
   return {
     title,
@@ -627,6 +651,7 @@ function validatePostDraft(payload) {
     state: state?.toUpperCase() ?? null,
     species,
     huntNumber: huntNumber?.toUpperCase() ?? null,
+    huntId: state && huntNumber ? huntId : null,
   };
 }
 
@@ -668,6 +693,7 @@ export function validateScoutWorkspace(value) {
 
   const state = validateScoutState(value.state);
   const huntNumber = validateScoutHuntNumber(value.huntNumber);
+  const huntId = validateScoutHuntId(value.huntId);
   const name = normalizePlainText(value.name, "Workspace name", {
     min: 1,
     max: 140,
@@ -675,6 +701,7 @@ export function validateScoutWorkspace(value) {
   const fallbackHunt = {
     state,
     huntNumber,
+    ...(huntId ? { huntId } : {}),
     huntName: name,
     species: normalizePlainText(
       typeof value.pins?.[0]?.species === "string" ? value.pins[0].species : "",
@@ -800,6 +827,7 @@ export function validateScoutWorkspace(value) {
     version: 1,
     state,
     huntNumber,
+    ...(huntId ? { huntId } : {}),
     name,
     layers,
     pins,
@@ -1014,6 +1042,7 @@ export function scoutWorkspacesFromLibrary(libraryValue) {
       version: 1,
       state: group.hunt.state,
       huntNumber: group.hunt.huntNumber,
+      ...(group.hunt.huntId ? { huntId: group.hunt.huntId } : {}),
       name: group.hunt.huntName,
       layers,
       pins,
@@ -1121,13 +1150,27 @@ function validateScoutHuntNumber(value) {
   return value.toUpperCase();
 }
 
+function validateScoutHuntId(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (
+    typeof value !== "string" ||
+    value.length > 80 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)
+  ) {
+    throw new HttpError(400, "Workspace hunt ID is invalid.");
+  }
+  return value;
+}
+
 function validateScoutHuntContext(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new HttpError(400, "Layer hunt details are invalid.");
   }
+  const huntId = validateScoutHuntId(value.huntId);
   return {
     state: validateScoutState(value.state),
     huntNumber: validateScoutHuntNumber(value.huntNumber),
+    ...(huntId ? { huntId } : {}),
     huntName: normalizePlainText(value.huntName, "Hunt name", {
       min: 1,
       max: 140,
@@ -1400,6 +1443,7 @@ function postSelectSql(viewerId) {
       p.state,
       p.species,
       p.hunt_number,
+      p.hunt_id,
       u.display_name AS author_name,
       u.is_staff AS is_staff,
       p.created_at,
@@ -1447,6 +1491,10 @@ function mapPost(row) {
       row.hunt_number === null || row.hunt_number === undefined
         ? null
         : String(row.hunt_number),
+    huntId:
+      row.hunt_id === null || row.hunt_id === undefined
+        ? null
+        : String(row.hunt_id),
     authorName: String(row.author_name),
     isStaff: Number(row.is_staff) === 1,
     createdAt: new Date(Number(row.created_at)).toISOString(),
@@ -1651,8 +1699,8 @@ async function createPost(request, db, user) {
   await db
     .prepare(
       `INSERT INTO community_posts
-        (id, author_id, title, body, category, post_type, state, species, hunt_number, created_at, updated_at, last_activity_at, base_score, base_reply_count, view_count, is_pinned, is_locked)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0)`,
+        (id, author_id, title, body, category, post_type, state, species, hunt_number, hunt_id, created_at, updated_at, last_activity_at, base_score, base_reply_count, view_count, is_pinned, is_locked)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0)`,
     )
     .bind(
       id,
@@ -1664,6 +1712,7 @@ async function createPost(request, db, user) {
       draft.state,
       draft.species,
       draft.huntNumber,
+      draft.huntId,
       now,
       now,
       now,

@@ -51,7 +51,7 @@ test("the proxy forwards only approved request headers and the raw POST body", a
         "x-firebase-id-token": "firebase-token",
         authorization: "Bearer must-not-forward",
         cookie: "session=must-not-forward",
-        origin: "https://huntplanner-66d5e.web.app",
+        origin: "https://huntplanner.web.app",
         "x-forwarded-for": "203.0.113.10",
         "x-arbitrary": "must-not-forward",
       },

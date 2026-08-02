@@ -11,9 +11,15 @@ import {
   type User,
 } from 'firebase/auth'
 
+const LEGACY_AUTH_DOMAIN = 'huntplanner-66d5e.web.app'
+const CANONICAL_AUTH_DOMAIN = 'huntplanner.web.app'
+
 const firebaseConfig = {
   apiKey: 'AIzaSyBpuyQXJ6HIthnLBIyT7tDLqiIaVS070gw',
-  authDomain: 'huntplanner-66d5e.web.app',
+  authDomain:
+    typeof window !== 'undefined' && window.location.hostname === LEGACY_AUTH_DOMAIN
+      ? LEGACY_AUTH_DOMAIN
+      : CANONICAL_AUTH_DOMAIN,
   projectId: 'huntplanner-66d5e',
   storageBucket: 'huntplanner-66d5e.firebasestorage.app',
   messagingSenderId: '760945604648',

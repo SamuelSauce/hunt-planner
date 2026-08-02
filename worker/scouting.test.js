@@ -57,6 +57,35 @@ test("validates and normalizes a private scout workspace document", () => {
   assert.equal(result.pins[0].location.longitude, -112.31);
 });
 
+test("preserves an optional exact hunt ID in workspaces and shared snapshots", () => {
+  const source = workspace({
+    state: "idaho",
+    huntNumber: "2145",
+    huntId: "id-81881",
+  });
+  const result = validateScoutWorkspace(source);
+  const shared = buildScoutShareDocument(
+    source,
+    {
+      title: "December Area 70-1",
+      layerIds: ["layer_scratch"],
+      includeNotes: false,
+    },
+    1_785_000_100_000,
+  );
+
+  assert.equal(result.huntId, "id-81881");
+  assert.equal(result.layers[0].hunt.huntId, "id-81881");
+  assert.equal(shared.workspace.huntId, "id-81881");
+});
+
+test("rejects invalid exact hunt IDs", () => {
+  assert.throws(
+    () => validateScoutWorkspace(workspace({ huntId: "bad id!" })),
+    /hunt ID is invalid/i,
+  );
+});
+
 test("rejects pins outside coordinate bounds", () => {
   const invalid = workspace();
   invalid.pins[0].location.latitude = 91;
@@ -174,6 +203,14 @@ test("allows anonymous read-only access to an unlisted scout map", async () => {
   const db = {
     prepare(sql) {
       return {
+        async all() {
+          return sql.includes("table_info")
+            ? { results: [{ name: "hunt_id" }] }
+            : { results: [] };
+        },
+        async run() {
+          return { meta: { changes: 0 } };
+        },
         bind() {
           return {
             async first() {

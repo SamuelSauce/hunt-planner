@@ -165,6 +165,7 @@ export function Hunt3DMap({
   const huntContext: ScoutHuntContext = useMemo(() => ({
     state: plannerState,
     huntNumber: hunt?.huntNumber ?? 'MAP',
+    ...(hunt?.id ? { huntId: hunt.id } : {}),
     huntName: hunt?.huntName ?? `${stateName} scouting map`,
     species: hunt?.species ?? 'General',
     gender: hunt?.gender ?? '',

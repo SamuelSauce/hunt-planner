@@ -36,6 +36,7 @@ export type CommunityPost = {
   state: string | null
   species: string | null
   huntNumber: string | null
+  huntId?: string | null
   authorName: string
   isStaff: boolean
   createdAt: string
@@ -73,6 +74,7 @@ export type CommunityDraft = {
   state: string
   species: string
   huntNumber: string
+  huntId?: string
 }
 
 export type CommunityFilters = {

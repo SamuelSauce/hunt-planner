@@ -11,7 +11,7 @@
 
 ## Keep automated and internal checks out of Analytics
 
-- Start every automated or Codex-driven check of a public Hunt Planner page with `?analytics=off` (for example, `https://huntplanner-66d5e.web.app/?analytics=off`). The preference persists in that browser, and the app removes the parameter from the visible URL.
+- Start every automated or Codex-driven check of a public Hunt Planner page with `?analytics=off` (for example, `https://huntplanner.web.app/?analytics=off`). The preference persists in that browser, and the app removes the parameter from the visible URL.
 - The site also suppresses Analytics when it detects WebDriver, headless browsers, or Codex-related browser user agents, but the explicit query parameter is the reliable default.
 - To restore Analytics collection in a browser that was opted out, visit any site page once with `?analytics=on`.
 

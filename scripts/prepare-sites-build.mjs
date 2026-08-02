@@ -6,6 +6,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const DIST = path.join(ROOT, 'dist')
 const CLIENT = path.join(DIST, 'client')
 const SERVER = path.join(DIST, 'server')
+const LEGACY = path.join(DIST, 'legacy')
 const HOSTING = path.join(ROOT, '.openai', 'hosting.json')
 const WORKER = path.join(ROOT, 'worker', 'index.js')
 
@@ -21,5 +22,6 @@ if (!fs.existsSync(WORKER)) {
 
 fs.mkdirSync(SERVER, { recursive: true })
 fs.copyFileSync(WORKER, path.join(SERVER, 'index.js'))
+fs.rmSync(LEGACY, { recursive: true, force: true })
 
 console.log('Prepared the validated Sites build with the Community API worker.')

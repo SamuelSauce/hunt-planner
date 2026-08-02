@@ -13,6 +13,7 @@ import {
   scoutLibraryFromWorkspaces,
   scoutPinColor,
   scoutPinsGeoJson,
+  scoutWorkspaceFromLibrary,
   type ScoutHuntContext,
 } from '../src/scouting/model.ts'
 
@@ -221,4 +222,45 @@ test('opening the map workspace shows every saved layer and supplies an empty ma
   assert.ok(opened.layers.every((layer) => layer.visible))
   assert.ok(opened.layers.some((layer) => layer.hunt.huntNumber === 'MAP'))
   assert.equal(scoutLibraryForPersistence(opened).layers.length, 1)
+})
+
+test('duplicate hunt numbers keep exact-season scout layers and share identity separate', () => {
+  const november: ScoutHuntContext = {
+    state: 'idaho',
+    huntNumber: '2145',
+    huntId: 'id-81880',
+    huntName: 'Area 70-1',
+    species: 'Elk',
+    gender: 'Antlerless',
+    weapon: 'Muzzleloader',
+  }
+  const december: ScoutHuntContext = {
+    ...november,
+    huntId: 'id-81881',
+  }
+
+  const novemberLibrary = scoutLibraryForHunt(createScoutLibrary(400), november, 401)
+  const decemberLibrary = scoutLibraryForHunt(novemberLibrary, december, 402)
+
+  assert.equal(decemberLibrary.layers.length, 2)
+  assert.equal(decemberLibrary.layers[0].visible, false)
+  assert.equal(decemberLibrary.layers[1].visible, true)
+  assert.equal(
+    scoutWorkspaceFromLibrary(decemberLibrary, december).huntId,
+    'id-81881',
+  )
+})
+
+test('opening a stable hunt ID claims matching legacy scout layers', () => {
+  const legacy = scoutLibraryForHunt(createScoutLibrary(500), paunsaugunt, 501)
+  const exact = {
+    ...paunsaugunt,
+    huntId: 'DB1001',
+  }
+
+  const opened = scoutLibraryForHunt(legacy, exact, 502)
+
+  assert.equal(opened.layers.length, 1)
+  assert.equal(opened.layers[0].hunt.huntId, 'DB1001')
+  assert.equal(opened.layers[0].visible, true)
 })
