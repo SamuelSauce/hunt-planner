@@ -8,6 +8,7 @@ import {
   filterScoutPins,
   mergeScoutWorkspaces,
   scoutLibraryForHunt,
+  scoutLibraryForMap,
   scoutLibraryForPersistence,
   scoutLibraryFromWorkspaces,
   scoutPinColor,
@@ -200,6 +201,27 @@ test('opening another hunt turns its layers on and all other hunt layers off', (
   assert.ok(current.every((layer) => layer.visible))
   assert.ok(other.every((layer) => !layer.visible))
   assert.equal(opened.pins.length, 3)
+})
+
+test('opening the map workspace shows every saved layer and supplies an empty map layer', () => {
+  const paunsauguntWorkspace = sampleWorkspace()
+  const wasatchWorkspace = createScoutWorkspace('utah', 'EA1189', 'Wasatch Mtns, West-Central', 200)
+  wasatchWorkspace.layers[0].hunt = wasatch
+  const library = scoutLibraryFromWorkspaces([paunsauguntWorkspace, wasatchWorkspace], 300)
+  const mapContext: ScoutHuntContext = {
+    state: 'utah',
+    huntNumber: 'MAP',
+    huntName: 'Utah scouting map',
+    species: 'General',
+    gender: '',
+    weapon: '',
+  }
+
+  const opened = scoutLibraryForMap(library, mapContext, 301)
+
+  assert.ok(opened.layers.every((layer) => layer.visible))
+  assert.ok(opened.layers.some((layer) => layer.hunt.huntNumber === 'MAP'))
+  assert.equal(scoutLibraryForPersistence(opened).layers.length, 1)
 })
 
 test('duplicate hunt numbers keep exact-season scout layers and share identity separate', () => {

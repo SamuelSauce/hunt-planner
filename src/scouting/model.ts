@@ -296,6 +296,25 @@ export function scoutLibraryForHunt(
 }
 
 /**
+ * Opens the scouting library as one map-wide workspace. Saved layers from
+ * every hunt start visible, while an empty map layer is supplied so a new
+ * user can still drop and save a pin without choosing a hunt first.
+ */
+export function scoutLibraryForMap(
+  library: ScoutLibrary,
+  mapContext: ScoutHuntContext,
+  now = Date.now(),
+): ScoutLibrary {
+  const layers = library.layers.map((layer) => ({ ...layer, visible: true }))
+  if (!layers.some(
+    (layer) => layer.kind === 'hunt-default' && sameScoutHunt(layer.hunt, mapContext),
+  )) {
+    layers.push(createHuntDefaultLayer(mapContext, layers.length, now))
+  }
+  return { ...library, layers }
+}
+
+/**
  * Visibility belongs to the current map session, not the saved library.
  * Unused default layers are also removed so opening a hunt never writes data.
  */
