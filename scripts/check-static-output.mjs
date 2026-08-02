@@ -211,12 +211,27 @@ if (!productionHosting) fail('firebase.json is missing the production Hosting ta
 if ((productionHosting.rewrites || []).some((rewrite) => rewrite.source === '**')) {
   fail('firebase.json still contains a soft-404 catch-all rewrite')
 }
+const appRouteRewrite = '/{map,account,profile}{,/**}'
+if (
+  !(productionHosting.rewrites || []).some(
+    (rewrite) => rewrite.source === appRouteRewrite && rewrite.destination === '/index.html',
+  )
+) {
+  fail('The production Hosting target must serve direct interactive app routes')
+}
 const legacyHosting = hostingEntries.find((entry) => entry.target === 'legacy')
 if (!legacyHosting || legacyHosting.public !== productionHosting.public) {
   fail('The legacy Hosting target must preserve access to the canonical build')
 }
 if ((legacyHosting.redirects || []).length > 0) {
   fail('The legacy Hosting target must not strand origin-scoped guest scouting data')
+}
+if (
+  !(legacyHosting.rewrites || []).some(
+    (rewrite) => rewrite.source === appRouteRewrite && rewrite.destination === '/index.html',
+  )
+) {
+  fail('The legacy Hosting target must serve direct interactive app routes')
 }
 
 const feed = fs.readFileSync(path.join(DIST, 'feed.xml'), 'utf8')
