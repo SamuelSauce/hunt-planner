@@ -41,6 +41,15 @@ BOUNDARY_FILES = {
     ),
 }
 
+WYOMING_BOUNDARY_FILE_BY_SPECIES = {
+    "Bighorn Sheep": "public/data/boundaries/wyoming-bighorn-sheep.json",
+    "Deer": "public/data/boundaries/wyoming-deer.json",
+    "Elk": "public/data/boundaries/wyoming-elk.json",
+    "Moose": "public/data/boundaries/wyoming-moose.json",
+    "Mountain Goat": "public/data/boundaries/wyoming-mountain-goat.json",
+    "Pronghorn": "public/data/boundaries/wyoming-pronghorn.json",
+}
+
 FONT_REGULAR = Path("/System/Library/Fonts/Supplemental/Arial.ttf")
 FONT_BOLD = Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf")
 FONT_SERIF_BOLD = Path("/System/Library/Fonts/Supplemental/Georgia Bold.ttf")
@@ -96,7 +105,15 @@ def find_boundary_features(
     ids = boundary_ids(state, hunt)
     matches: list[dict[str, Any]] = []
     source_label = ""
-    for relative_path in BOUNDARY_FILES[state]:
+    relative_paths = BOUNDARY_FILES[state]
+    if state == "wyoming":
+        species_path = WYOMING_BOUNDARY_FILE_BY_SPECIES.get(str(hunt.get("species")))
+        if not species_path:
+            raise SystemExit(
+                f"No Wyoming boundary source configured for {hunt.get('species')}"
+            )
+        relative_paths = (species_path,)
+    for relative_path in relative_paths:
         data = load_json(relative_path)
         for feature in data.get("features", []):
             hunt_numbers = {
