@@ -2,8 +2,8 @@
 slug: december-cow-elk-possibilities-idaho-wyoming
 title: "December Cow Elk Possibilities: Four Late-Season Tradeoffs"
 description: "A freezer-focused guide comparing four Idaho and Wyoming cow elk hunts by 2026 season, draw demand, 2025 harvest, access and winter logistics."
-datePublished: 2026-09-13T08:15:00-04:00
-dateModified: 2026-09-13T08:15:00-04:00
+datePublished: 2026-09-13T08:07:00-04:00
+dateModified: 2026-09-13T08:07:00-04:00
 series: Hunt Possibilities
 state: idaho
 species: Elk
