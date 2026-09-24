@@ -60,7 +60,12 @@ def load_json(relative_path: str) -> Any:
         return json.load(handle)
 
 
-def find_hunt(state: str, hunt_number: str, hunt_name: str | None) -> dict[str, Any]:
+def find_hunt(
+    state: str,
+    hunt_number: str,
+    hunt_name: str | None,
+    species: str | None,
+) -> dict[str, Any]:
     data = load_json(STATE_FILES[state][0])
     candidates = [
         hunt for hunt in data["hunts"]
@@ -73,6 +78,16 @@ def find_hunt(state: str, hunt_number: str, hunt_name: str | None) -> dict[str, 
         ]
         if named:
             candidates = named
+    if species:
+        species_matches = [
+            hunt for hunt in candidates
+            if str(hunt.get("species", "")).lower() == species.lower()
+        ]
+        if not species_matches:
+            raise SystemExit(
+                f"No {state} {species} hunt found for {hunt_number}"
+            )
+        candidates = species_matches
     if not candidates:
         raise SystemExit(f"No {state} hunt found for {hunt_number}")
     return next(
@@ -471,6 +486,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state", choices=STATE_FILES, default="utah")
     parser.add_argument("--hunt-number", default="DB1001")
     parser.add_argument("--hunt-name")
+    parser.add_argument("--species")
     parser.add_argument("--series-label", default="THE HUNT BRIEF")
     parser.add_argument(
         "--output",
@@ -481,7 +497,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    hunt = find_hunt(args.state, args.hunt_number, args.hunt_name)
+    hunt = find_hunt(args.state, args.hunt_number, args.hunt_name, args.species)
     features, source_label = find_boundary_features(args.state, hunt)
     output = Path(args.output)
     if not output.is_absolute():
