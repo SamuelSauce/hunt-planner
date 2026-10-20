@@ -7,11 +7,11 @@ import argparse
 import json
 import math
 import re
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-
 
 ROOT = Path(__file__).resolve().parents[1]
 WIDTH = 1200
@@ -339,7 +339,11 @@ def estimate_p50_draw(
         regular = [
             tier
             for tier in tiers
-            if re.search(r"regular|preference draw", str(tier.get("pool", "")), re.I)
+            if re.search(
+                r"regular|preference draw",
+                str(tier.get("pool", "")),
+                re.IGNORECASE,
+            )
         ]
         candidates = regular or tiers
         chance_by_point: dict[int, float] = {}
@@ -452,7 +456,11 @@ def create_card(
 
     harvest = hunt.get("harvest") or {}
     quota = hunt.get("quota") or {}
-    draw_label, draw_value = draw_metric(hunt)
+    card_draw_metric = hunt.get("cardDrawMetric") or {}
+    draw_label = card_draw_metric.get("label")
+    draw_value = card_draw_metric.get("value")
+    if not draw_label or not draw_value:
+        draw_label, draw_value = draw_metric(hunt)
     stats = [
         (f"{hunt.get('planningYear', 'CURRENT')} PERMITS", compact_number(quota.get("total"))),
         (f"{harvest.get('year', 'LATEST')} SUCCESS", (
@@ -488,6 +496,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hunt-name")
     parser.add_argument("--species")
     parser.add_argument("--series-label", default="THE HUNT BRIEF")
+    parser.add_argument("--season-label")
+    parser.add_argument("--permit-count", type=int)
+    parser.add_argument("--success-rate", type=float)
+    parser.add_argument("--success-year", type=int)
+    parser.add_argument("--draw-label")
+    parser.add_argument("--draw-value")
     parser.add_argument(
         "--output",
         default="public/images/journal/db1001-paunsaugunt-archery-2026.png",
@@ -498,6 +512,21 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     hunt = find_hunt(args.state, args.hunt_number, args.hunt_name, args.species)
+    hunt = dict(hunt)
+    if args.season_label:
+        hunt["seasonDateText"] = args.season_label
+    if args.permit_count is not None:
+        hunt["quota"] = {"total": args.permit_count}
+    if args.success_rate is not None:
+        hunt["harvest"] = {
+            "successRate": args.success_rate,
+            "year": args.success_year or "LATEST",
+        }
+    if args.draw_label or args.draw_value:
+        hunt["cardDrawMetric"] = {
+            "label": args.draw_label or "DRAW HISTORY",
+            "value": args.draw_value or "Not available",
+        }
     features, source_label = find_boundary_features(args.state, hunt)
     output = Path(args.output)
     if not output.is_absolute():
