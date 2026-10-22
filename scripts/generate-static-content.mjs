@@ -1064,14 +1064,19 @@ function huntStats(group) {
   }
 }
 
-function statCards(group) {
+function statCards(group, snapshot = {}) {
   const stats = huntStats(group)
+  const permitCount = Number.parseInt(String(snapshot.snapshotPermitCount ?? '').replaceAll(',', ''), 10)
+  const drawSummary =
+    snapshot.snapshotDrawLabel && snapshot.snapshotDrawValue
+      ? { label: snapshot.snapshotDrawLabel, value: snapshot.snapshotDrawValue }
+      : stats.drawSummary
   return `
     <div class="stats-grid" aria-label="Hunt snapshot">
-      <div class="stat-card"><span>Season</span><strong>${escapeHtml(stats.hunt.seasonDateText || 'See agency')}</strong></div>
-      <div class="stat-card"><span>Total permits</span><strong>${formatNumber(stats.quota?.total)}</strong></div>
+      <div class="stat-card"><span>Season</span><strong>${escapeHtml(snapshot.snapshotSeason || stats.hunt.seasonDateText || 'See agency')}</strong></div>
+      <div class="stat-card"><span>Total permits</span><strong>${formatNumber(Number.isFinite(permitCount) ? permitCount : stats.quota?.total)}</strong></div>
       <div class="stat-card"><span>Harvest success</span><strong>${formatPercent(stats.harvest?.successRate)}</strong></div>
-      <div class="stat-card"><span>${escapeHtml(stats.drawSummary.label)}</span><strong>${escapeHtml(stats.drawSummary.value)}</strong></div>
+      <div class="stat-card"><span>${escapeHtml(drawSummary.label)}</span><strong>${escapeHtml(drawSummary.value)}</strong></div>
     </div>`
 }
 
@@ -1142,7 +1147,7 @@ function articlePage(article) {
             article.data.heroCaption ||
               `Hunt Planner orientation graphic derived from the published ${article.group.state.agency} hunt boundary. Not for field navigation.`,
           )}</p>
-          ${statCards(article.group)}
+          ${statCards(article.group, article.data)}
           <aside class="action-band">
             <div><strong>Research ${escapeHtml(article.data.huntNumber)} in Hunt Planner</strong><span>Compare the official data, inspect the boundary or open the terrain in 3D.</span></div>
             <div class="button-row">
